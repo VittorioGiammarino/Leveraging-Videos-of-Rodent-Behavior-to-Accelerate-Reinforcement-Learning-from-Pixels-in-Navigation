@@ -6,7 +6,7 @@
 
 #$ -j y
 
-#$ -N TD3_BipedalWalkerHardcore-v3
+#$ -N RL_TD3
 
 #$ -V
 
@@ -16,4 +16,4 @@
 module load miniconda
 
 conda activate /project/onr/vgiammar/RL_env
-python main.py --mode RL --policy TD3 --env BipedalWalkerHardcore-v3 --max_iter 300 --seed 1
+python main.py --mode RL --policy TD3 --max_iter 100 --seed $1
