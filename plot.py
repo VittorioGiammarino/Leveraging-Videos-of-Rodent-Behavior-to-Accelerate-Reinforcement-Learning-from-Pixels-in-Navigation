@@ -16,7 +16,6 @@ def load_obj(name):
     with open('specs/' + name + '.pkl', 'rb') as f:
         return pickle.load(f)
 
-specs = load_obj('specs')
 
 # environments = ['BipedalWalker-v3', 'BipedalWalkerHardcore-v3', 'LunarLander-v2', 'LunarLanderContinuous-v2',
 #                 'Ant-v3', 'HalfCheetah-v3', 'Hopper-v3', 'Humanoid-v3', 'HumanoidStandup-v2', 'Swimmer-v3', 'Walker2d-v3',
@@ -55,18 +54,16 @@ colors['HSAC_3'] = 'peru'
 
 # %%
 
-# RL_algorithms = ['Vanilla_A2C', 'PPO', 'A2C', 'GePPO', 'GeA2C']
+RL_algorithms = ['PPO', 'GePPO', 'SAC', 'TD3']
 
-RL_algorithms = ['PPO', 'PPO_from_videos']
+# RL_algorithms = ['PPO', 'PPO_from_videos']
 
 colors = {}
 
-colors['Vanilla_A2C'] = 'tab:blue'
 colors['PPO'] = 'tab:orange'
-colors['A2C'] = 'tab:pink'
 colors['GePPO'] = 'lime'
-colors['GeA2C'] = 'tab:red'
-colors['PPO_from_videos'] = 'tab:purple'
+colors['TD3'] = 'tab:red'
+colors['SAC'] = 'tab:purple'
 
 environments = ['MiniGrid-Empty-16x16-v0']
 
@@ -88,21 +85,69 @@ for env in environments:
         
         RL = []
         
-        for seed in range(1):
-            with open(f'results/RL/RL_{policy}_{env}_{seed}.npy', 'rb') as f:
-                RL.append(np.load(f, allow_pickle=True))  
+        for seed in range(10):
+            
+            if policy == "TD3" or policy == "SAC":
+                with open(f'results/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
+                    RL.append(np.load(f, allow_pickle=True))  
+            else:
+                with open(f'results/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
+                    RL.append(np.load(f, allow_pickle=True))                  
                 
-            mean = np.mean(np.array(RL), 0)
-            steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
-            std = np.std(np.array(RL),0)
-            ax.plot(steps, mean, label=policy, c=colors[policy])
-            ax.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+        mean = np.mean(np.array(RL), 0)
+        steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
+        std = np.std(np.array(RL),0)
+        ax.plot(steps, mean, label=policy, c=colors[policy])
+        ax.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
                 
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3)
-    ax.set_xlabel('Steps')
-    ax.set_ylabel('Reward')
+ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3)
+ax.set_xlabel('Steps')
+ax.set_ylabel('Reward')
 
-
+for env in environments:
+    
+    columns = 1
+    rows = 1
+    
+    fig, ax = plt.subplots(rows, columns)
+    plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
+    fig.suptitle(env, fontsize="xx-large")
+    
+    for i in range(len(RL_algorithms)):
+    
+    # for k, ax_row in enumerate(ax):
+    #     for j, axes in enumerate(ax_row):
+            
+        policy = RL_algorithms[i]
+        
+        RL = []
+        wallclock = []
+        
+        for seed in range(10):
+            
+            if policy == "TD3" or policy == "SAC":
+                with open(f'results/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
+                    RL.append(np.load(f, allow_pickle=True))  
+                    
+                with open(f'results/RL/wallclock_time_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
+                    wallclock.append(np.load(f, allow_pickle=True))  
+                    
+            else:
+                with open(f'results/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
+                    RL.append(np.load(f, allow_pickle=True))     
+                    
+                with open(f'results/RL/wallclock_time_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
+                    wallclock.append(np.load(f, allow_pickle=True))  
+                
+        mean = np.mean(np.array(RL), 0)
+        steps = np.append(0, np.mean(np.array(wallclock), 0))
+        std = np.std(np.array(RL),0)
+        ax.plot(steps, mean, label=policy, c=colors[policy])
+        ax.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+                
+ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3)
+ax.set_xlabel('Time')
+ax.set_ylabel('Reward')
 
 # %%
 for env in environments:
