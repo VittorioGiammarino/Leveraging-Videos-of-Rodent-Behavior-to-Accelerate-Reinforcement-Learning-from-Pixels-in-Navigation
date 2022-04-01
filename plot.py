@@ -54,16 +54,23 @@ colors['HSAC_3'] = 'peru'
 
 # %%
 
-RL_algorithms = ['PPO', 'GePPO', 'SAC', 'TD3']
+RL_algorithms = ['AWAC', 'AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 
+                  'GeA2C', 'GePPO', 'PPO', 'SAC', 'TD3']
 
 # RL_algorithms = ['PPO', 'PPO_from_videos']
 
 colors = {}
 
-colors['PPO'] = 'tab:orange'
-colors['GePPO'] = 'lime'
-colors['TD3'] = 'tab:red'
-colors['SAC'] = 'tab:purple'
+colors['AWAC'] = 'tab:blue'
+colors['AWAC_GAE'] = 'tab:orange'
+colors['AWAC_Q_lambda_Haru'] = 'lime'
+colors['AWAC_Q_lambda_Peng'] = 'tab:purple'
+colors['AWAC_Q_lambda_TB'] = 'tab:brown'
+colors['GeA2C'] = 'tab:green'
+colors['GePPO'] = 'tab:gray'
+colors['PPO'] = 'chocolate'
+colors['SAC'] = 'tab:olive'
+colors['TD3'] = 'tab:cyan'
 
 environments = ['MiniGrid-Empty-16x16-v0']
 
@@ -87,22 +94,109 @@ for env in environments:
         
         for seed in range(10):
             
-            if policy == "TD3" or policy == "SAC":
-                with open(f'results/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
-                    RL.append(np.load(f, allow_pickle=True))  
-            else:
-                with open(f'results/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
-                    RL.append(np.load(f, allow_pickle=True))                  
+            try:
+                if policy == "TD3" or policy == "SAC":
+                    with open(f'results_partial/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
+                        RL.append(np.load(f, allow_pickle=True))  
+                else:
+                    with open(f'results_partial/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
+                        RL.append(np.load(f, allow_pickle=True))    
+                        
+            except:
+                continue
                 
-        mean = np.mean(np.array(RL), 0)
-        steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
-        std = np.std(np.array(RL),0)
-        ax.plot(steps, mean, label=policy, c=colors[policy])
-        ax.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+        try:
+            mean = np.mean(np.array(RL), 0)
+            steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
+            std = np.std(np.array(RL),0)
+            ax.plot(steps, mean, label=policy, c=colors[policy])
+            ax.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+        except:
+            continue
+
+    if not os.path.exists(f"./Figures/{env}"):
+        os.makedirs(f"./Figures/{env}")
+              
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3)
+    ax.set_xlabel('Frames')
+    ax.set_ylabel('Reward')
+    plt.savefig(f'Figures/{env}/{env}_Online_RL.pdf', format='pdf', bbox_inches='tight')
+
+# %%
+
+RL_algorithms = ['PPO']
+
+# RL_algorithms = ['AWAC', 'AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 
+#                  'GeA2C', 'GePPO', 'PPO', 'SAC', 'TD3']
+
+# RL_algorithms = ['PPO', 'PPO_from_videos']
+
+colors = {}
+
+colors['AWAC'] = 'tab:blue'
+colors['AWAC_GAE'] = 'tab:orange'
+colors['AWAC_Q_lambda_Haru'] = 'lime'
+colors['AWAC_Q_lambda_Peng'] = 'tab:purple'
+colors['AWAC_Q_lambda_TB'] = 'tab:brown'
+colors['GeA2C'] = 'tab:green'
+colors['GePPO'] = 'tab:gray'
+colors['PPO'] = 'chocolate'
+colors['SAC'] = 'tab:olive'
+colors['TD3'] = 'tab:cyan'
+
+environments = ['MiniGrid-Empty-16x16-v0']
+
+for env in environments:
+    
+    columns = 1
+    rows = 1
+    
+    fig, ax = plt.subplots(rows, columns)
+    plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
+    fig.suptitle(env, fontsize="xx-large")
+    
+    for i in range(len(RL_algorithms)):
+    
+    # for k, ax_row in enumerate(ax):
+    #     for j, axes in enumerate(ax_row):
+            
+        policy = RL_algorithms[i]
+        
+        RL = []
+        
+        for seed in range(10):
+            
+            try:
+                if policy == "TD3" or policy == "SAC":
+                    with open(f'results_partial/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
+                        RL.append(np.load(f, allow_pickle=True))  
+                else:
+                    with open(f'results_partial/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
+                        RL.append(np.load(f, allow_pickle=True))    
+                        
+            except:
+                continue
                 
-ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3)
-ax.set_xlabel('Steps')
-ax.set_ylabel('Reward')
+        try:
+            mean = np.mean(np.array(RL), 0)
+            steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
+            std = np.std(np.array(RL),0)
+            ax.plot(steps, mean, label=policy, c=colors[policy])
+            ax.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+        except:
+            continue
+
+    if not os.path.exists(f"./Figures/{env}"):
+        os.makedirs(f"./Figures/{env}")
+              
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3)
+    ax.set_xlabel('Frames')
+    ax.set_ylabel('Reward')
+
+
+
+# %%
+
 
 for env in environments:
     
@@ -125,29 +219,37 @@ for env in environments:
         
         for seed in range(10):
             
-            if policy == "TD3" or policy == "SAC":
-                with open(f'results/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
-                    RL.append(np.load(f, allow_pickle=True))  
-                    
-                with open(f'results/RL/wallclock_time_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
-                    wallclock.append(np.load(f, allow_pickle=True))  
-                    
-            else:
-                with open(f'results/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
-                    RL.append(np.load(f, allow_pickle=True))     
-                    
-                with open(f'results/RL/wallclock_time_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
-                    wallclock.append(np.load(f, allow_pickle=True))  
+            try:
+                if policy == "TD3" or policy == "SAC":
+                    with open(f'results_partial/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
+                        RL.append(np.load(f, allow_pickle=True))  
+                        
+                    with open(f'results_partial/RL/wallclock_time_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
+                        wallclock.append(np.load(f, allow_pickle=True))  
+                        
+                else:
+                    with open(f'results_partial/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
+                        RL.append(np.load(f, allow_pickle=True))     
+                        
+                    with open(f'results_partial/RL/wallclock_time_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
+                        wallclock.append(np.load(f, allow_pickle=True))  
+                        
+            except:
+                continue
                 
-        mean = np.mean(np.array(RL), 0)
-        steps = np.append(0, np.mean(np.array(wallclock), 0))
-        std = np.std(np.array(RL),0)
-        ax.plot(steps, mean, label=policy, c=colors[policy])
-        ax.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+        try:
+            mean = np.mean(np.array(RL), 0)
+            steps = np.append(0, np.mean(np.array(wallclock)/3600, 0))
+            std = np.std(np.array(RL),0)
+            ax.plot(steps, mean, label=policy, c=colors[policy])
+            ax.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+        except:
+            continue
                 
-ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3)
-ax.set_xlabel('Time')
-ax.set_ylabel('Reward')
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3)
+    ax.set_xlabel('Wallclock Time [h]')
+    ax.set_ylabel('Reward')
+    plt.savefig(f'Figures/{env}/{env}_Online_RL_Time.pdf', format='pdf', bbox_inches='tight')
 
 # %%
 for env in environments:

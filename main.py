@@ -34,6 +34,13 @@ from algorithms.offline_RL.AWAC_off import AWAC_off
 from algorithms.offline_RL.BC import BC
 from algorithms.offline_RL.PPO_off import PPO_off
 from algorithms.offline_RL.AWAC_Q_lambda_off import AWAC_Q_lambda_off
+from algorithms.offline_RL.AWR_off import AWR_off
+
+from algorithms.on_off_RL_expert.on_off_SAC import on_off_SAC
+from algorithms.on_off_RL_expert.on_off_AWAC_Q_lambda_Peng import on_off_AWAC_Q_lambda_Peng
+from algorithms.on_off_RL_expert.on_off_AWAC_Q_lambda_haru import on_off_AWAC_Q_lambda_haru
+from algorithms.on_off_RL_expert.on_off_AWAC_TB import on_off_AWAC_TB
+from algorithms.on_off_RL_expert.on_off_AWAC_GAE import on_off_AWAC_GAE
 
 # import PPO_from_videos
 
@@ -193,30 +200,146 @@ def RL(env, args, seed):
             
             return wallclock_time, evaluation_RL, Agent_RL 
         
-    # elif args.mode == "off-on-RL":
-    #     with open('data_set/rodent_data_processed.npy', 'rb') as f:
-    #         External_data_set = np.load(f, allow_pickle=True)
-            
-    #     if args.policy == "PPO_from_videos":        
-    #         kwargs = {
-    #          "state_dim": state_dim,
-    #          "action_dim": action_dim,
-    #          "action_space_cardinality": action_space_cardinality,
-    #          "max_action": max_action,
-    #          "min_action": min_action,
-    #          "external_data_set" : External_data_set,
-    #          "number_obs_per_iter": args.number_obs_per_iter,
-    #          "num_steps_per_rollout": args.number_steps_per_iter,
-    #         }
+        if args.policy == "AWR":
+            kwargs = {
+                "state_dim": state_dim,
+                "action_dim": action_dim,
+                "action_space_cardinality": action_space_cardinality,
+                "max_action": max_action,
+                "min_action": min_action,
+                "Entropy": args.Entropy
+                }
     
-    #         Agent_RL = PPO_from_videos.PPO_from_videos(**kwargs)
+            Agent_RL = AWR_off(**kwargs)
             
-    #         run_sim = runner.run_PPO(Agent_RL)
-    #         wallclock_time, evaluation_RL, Agent_RL = run_sim.run(env, args, seed)
+            run_sim = runner.run_AWR_off(Agent_RL)
+            wallclock_time, evaluation_RL, Agent_RL = run_sim.run(env, replay_buffer, args, seed)
             
-    #         return wallclock_time, evaluation_RL, Agent_RL  
+            return wallclock_time, evaluation_RL, Agent_RL 
+        
+    elif args.mode == "on_off_RL_from_expert":
+        
+        replay_buffer_online = ReplayBuffer(state_dim, action_dim)
+        
+        a_file = open(f"offline_data_set/data_set_{args.env}_{args.data_set}.pkl", "rb")
+        data_set = pickle.load(a_file)
+        
+        replay_buffer_offline = ReplayBuffer(state_dim, action_dim, len(data_set["observations"])-1)
+        replay_buffer_offline.convert_D4RL(data_set) 
+        
+        if args.policy == "SAC":            
+            kwargs = {
+             "state_dim": state_dim,
+             "action_dim": action_dim,
+             "action_space_cardinality": action_space_cardinality,
+             "max_action": max_action,
+             "min_action": min_action
+            }
+    
+            Agent_RL = on_off_SAC(**kwargs)
+            
+            run_sim = runner.run_on_off_SAC(Agent_RL)
+            wallclock_time, evaluation_RL, Agent_RL = run_sim.run(env, replay_buffer_online, replay_buffer_offline, args, seed)
+            
+            return wallclock_time, evaluation_RL, Agent_RL
+        
+        if args.policy == "AWAC_Q_lambda_Peng":
+            kwargs = {
+             "state_dim": state_dim,
+             "action_dim": action_dim,
+             "action_space_cardinality": action_space_cardinality,
+             "max_action": max_action,
+             "min_action": min_action,
+             "Entropy": args.Entropy,
+             "num_steps_per_rollout": args.number_steps_per_iter
+            }
+    
+            Agent_RL = on_off_AWAC_Q_lambda_Peng(**kwargs)
+            
+            run_sim = runner.run_on_off_AWAC_Q_lambda_Peng(Agent_RL)
+            wallclock_time, evaluation_RL, Agent_RL = run_sim.run(env, replay_buffer_offline, args, seed)
+            
+            return wallclock_time, evaluation_RL, Agent_RL  
+        
+        if args.policy == "AWAC_Q_lambda_Haru":
+            kwargs = {
+             "state_dim": state_dim,
+             "action_dim": action_dim,
+             "action_space_cardinality": action_space_cardinality,
+             "max_action": max_action,
+             "min_action": min_action,
+             "Entropy": args.Entropy,
+             "num_steps_per_rollout": args.number_steps_per_iter
+            }
+    
+            Agent_RL = on_off_AWAC_Q_lambda_haru(**kwargs)
+            
+            run_sim = runner.run_on_off_AWAC_Q_lambda_haru(Agent_RL)
+            wallclock_time, evaluation_RL, Agent_RL = run_sim.run(env, replay_buffer_offline, args, seed)
+            
+            return wallclock_time, evaluation_RL, Agent_RL  
+        
+        if args.policy == "AWAC_Q_lambda_TB":
+            kwargs = {
+             "state_dim": state_dim,
+             "action_dim": action_dim,
+             "action_space_cardinality": action_space_cardinality,
+             "max_action": max_action,
+             "min_action": min_action,
+             "Entropy": args.Entropy,
+             "num_steps_per_rollout": args.number_steps_per_iter
+            }
+    
+            Agent_RL = on_off_AWAC_TB(**kwargs)
+            
+            run_sim = runner.run_on_off_AWAC_TB(Agent_RL)
+            wallclock_time, evaluation_RL, Agent_RL = run_sim.run(env, replay_buffer_offline, args, seed)
+            
+            return wallclock_time, evaluation_RL, Agent_RL  
+        
+        if args.policy == "AWAC_GAE":        
+            kwargs = {
+             "state_dim": state_dim,
+             "action_dim": action_dim,
+             "action_space_cardinality": action_space_cardinality,
+             "max_action": max_action,
+             "min_action": min_action,
+             "Entropy": args.Entropy,
+             "num_steps_per_rollout": args.number_steps_per_iter
+            }
+    
+            Agent_RL = on_off_AWAC_GAE(**kwargs)
+            
+            run_sim = runner.run_on_off_AWAC_GAE(Agent_RL)
+            wallclock_time, evaluation_RL, Agent_RL = run_sim.run(env, replay_buffer_offline, args, seed)
+            
+            return wallclock_time, evaluation_RL, Agent_RL  
+    
+    elif args.mode == "on-off-RL_from_rodent":
+        with open('data_set/rodent_data_processed.npy', 'rb') as f:
+            External_data_set = np.load(f, allow_pickle=True)
+            
+        if args.policy == "PPO_from_videos":        
+            kwargs = {
+              "state_dim": state_dim,
+              "action_dim": action_dim,
+              "action_space_cardinality": action_space_cardinality,
+              "max_action": max_action,
+              "min_action": min_action,
+              "external_data_set" : External_data_set,
+              "number_obs_per_iter": args.number_obs_per_iter,
+              "num_steps_per_rollout": args.number_steps_per_iter,
+            }
+    
+            Agent_RL = PPO_from_videos.PPO_from_videos(**kwargs)
+            
+            run_sim = runner.run_PPO(Agent_RL)
+            wallclock_time, evaluation_RL, Agent_RL = run_sim.run(env, args, seed)
+            
+            return wallclock_time, evaluation_RL, Agent_RL  
     
     elif args.mode == "RL":
+        
         if args.policy == "SAC":
             kwargs = {
              "state_dim": state_dim,
@@ -450,16 +573,16 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
     #General
-    parser.add_argument("--mode", default="offline_RL", help='supported modes are HVI, HRL and RL (default = "HVI")')     
+    parser.add_argument("--mode", default="on_off_RL_from_expert", help='RL, offline_RL, on_off_RL_from_expert')     
     parser.add_argument("--env", default="MiniGrid-Empty-16x16-v0")  
     parser.add_argument("--data_set", default="human_expert", help="random or human_expert")  
     parser.add_argument("--action_space", default="Discrete")  # Sets Gym, PyTorch and Numpy seeds
     parser.add_argument("--grid_observability", default="Fully", help="Partial or Fully observable")
     parser.add_argument("--exploration_bonus", action = "store_true", help="reward to encourage exploration of less visited (state,action) pairs")
     
-    parser.add_argument("--policy", default="AWAC") # Policy name (TD3, DDPG or OurDDPG)
-    parser.add_argument("--seed", default=0, type=int)               # Sets Gym, PyTorch and Numpy seeds
-    parser.add_argument("--number_steps_per_iter", default=4096, type=int) # Time steps initial random policy is used 25e3
+    parser.add_argument("--policy", default="AWAC_Q_lambda_Peng") # Policy name (TD3, DDPG or OurDDPG)
+    parser.add_argument("--seed", default=10, type=int)               # Sets Gym, PyTorch and Numpy seeds
+    parser.add_argument("--number_steps_per_iter", default=4096, type=int) # Time steps initial random policy is used 25e3 (4096)
     parser.add_argument("--number_obs_per_iter", default=2000, type=int) # Time steps initial random policy is used 25e3
     parser.add_argument("--eval_freq", default=1, type=int)          # How often (time steps) we evaluate
     parser.add_argument("--max_iter", default=20, type=int)    # Max time steps to run environment
@@ -470,7 +593,7 @@ if __name__ == "__main__":
     parser.add_argument("--load_model", default=True, type=bool)               # Model load file name, "" doesn't load, "default" uses file_name
     parser.add_argument("--load_model_path", default="") 
     # PPO_off
-    parser.add_argument("--ntrajs", default=10, type=int)
+    parser.add_argument("--ntrajs", default=10, type=int) #10
     parser.add_argument("--Entropy", action="store_true")
     parser.add_argument("--BC", action="store_true")
     # Evaluation
@@ -511,7 +634,7 @@ if __name__ == "__main__":
             
     if args.mode == "offline_RL":
         
-        if args.policy == "AWAC_Q_lambda_TB" or args.policy == "AWAC_Q_lambda_Peng" or args.policy == "AWAC_Q_lambda_Haru" or args.policy == "AWAC":
+        if args.policy == "AWAC_Q_lambda_TB" or args.policy == "AWAC_Q_lambda_Peng" or args.policy == "AWAC_Q_lambda_Haru" or args.policy == "AWAC" or args.policy == "AWR":
             file_name = f"{args.mode}_{args.policy}_Entropy_{args.Entropy}_{args.env}_dataset_{args.data_set}_{args.seed}"
             print("--------------------------------------------------------------------------------------------------------")
             print(f"Mode: {args.mode}, Policy: {args.policy}_Entropy_{args.Entropy}, Env: {args.env}, Data: {args.data_set}, Seed: {args.seed}")
@@ -543,20 +666,25 @@ if __name__ == "__main__":
             np.save(f"./results/{args.mode}/wallclock_time_time_{file_name}", wallclock_time)
             policy.save_actor(f"./Saved_models/{args.mode}/{file_name}/{file_name}")
             
-    if args.mode == "off-on-RL":
+    if args.mode == "on_off_RL_from_expert":
         
-        args.env = "MiniGrid-Empty-16x16-v0"
-        
-        file_name = f"{args.mode}_{args.policy}_{args.env}_{args.seed}"
-        print("---------------------------------------")
-        print(f"Mode: {args.mode}, Policy: {args.policy}, Env: {args.env}, Seed: {args.seed}")
-        print("---------------------------------------")
+        if args.policy == "TD3" or args.policy == "SAC":
+            file_name = f"{args.mode}_{args.policy}_{args.env}_{args.seed}"
+            print("---------------------------------------")
+            print(f"Mode: {args.mode}, Policy: {args.policy}, Env: {args.env}, Seed: {args.seed}")
+            print("---------------------------------------")
+        else:
+            file_name = f"{args.mode}_{args.policy}_Entropy_{args.Entropy}_{args.env}_{args.seed}"
+            print("---------------------------------------")
+            print(f"Mode: {args.mode}, Policy: {args.policy}_Entropy_{args.Entropy}, Env: {args.env}, Seed: {args.seed}")
+            print("---------------------------------------")
         
         if not os.path.exists(f"./results/{args.mode}"):
             os.makedirs(f"./results/{args.mode}")
             
         if not os.path.exists(f"./Saved_models/{args.mode}/{file_name}"):
             os.makedirs(f"./Saved_models/{args.mode}/{file_name}")
+        
         
         wallclock_time, evaluations, policy = train(args, args.seed)
         

@@ -129,6 +129,8 @@ class AWAC_Q_lambda_off:
                     current_Q2 = Q2_on.gather(1, pi_action.long().unsqueeze(-1)) 
                     values = torch.min(current_Q1, current_Q2) - self.alpha*log_pi
                 else:
+                    current_Q1 = Q1_on.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q2 = Q2_on.gather(1, pi_action.long().unsqueeze(-1)) 
                     values = torch.min(current_Q1, current_Q2)
                     
                 final_bootstrap = values[-1].unsqueeze(-1)

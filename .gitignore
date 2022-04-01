@@ -3,3 +3,5 @@ offline_data_set/**
 __pycache__/**
 Saved_models/**
 log_files/**
+results/**
+results_partial/**

@@ -23,7 +23,7 @@ from models.ResMLP import ValueNetMLP
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class AWAC_Q_lambda:
+class on_off_AWAC_Q_lambda_Peng:
     def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, Entropy = True,   
                  num_steps_per_rollout=2000, l_rate_actor=3e-4, l_rate_alpha=3e-4, discount=0.99, tau=0.005, beta=3, 
                  gae_gamma = 0.99, gae_lambda = 0.99, minibatch_size=64, num_epochs=10, alpha=0.2, critic_freq=2):
@@ -46,7 +46,7 @@ class AWAC_Q_lambda:
         self.action_space_cardinality = action_space_cardinality
         self.max_action = max_action
         
-        self.num_steps_per_rollout = num_steps_per_rollout
+        self.num_steps_per_rollout_on = num_steps_per_rollout
         self.discount = discount
         self.tau = tau
         self.beta = beta
@@ -95,7 +95,7 @@ class AWAC_Q_lambda:
         self.target_Q = []
         self.advantage = []
 
-        while step < self.num_steps_per_rollout: 
+        while step < self.num_steps_per_rollout_on: 
             episode_states = []
             episode_actions = []
             episode_rewards = []
@@ -105,7 +105,7 @@ class AWAC_Q_lambda:
             t=0
             episode_reward = 0
 
-            while not done and step < self.num_steps_per_rollout: 
+            while not done and step < self.num_steps_per_rollout_on: 
             # Select action randomly or according to policy
                 if self.Total_t < args.start_timesteps:
                     if args.action_space == "Continuous":
@@ -113,7 +113,7 @@ class AWAC_Q_lambda:
                     elif args.action_space == "Discrete":
                         action = env.action_space.sample()  
                 else:
-                    action = AWAC_Q_lambda.select_action(self, state)
+                    action = on_off_AWAC_Q_lambda_Peng.select_action(self, state)
             
                 self.states.append(state.transpose(2,0,1))
                 self.actions.append(action)
@@ -182,236 +182,104 @@ class AWAC_Q_lambda:
                 self.advantage.append(episode_advantage)
                 self.target_Q.append(episode_target_Q)
                 
-    def Q_lambda_Haru(self, env, args):
-        step = 0
-        self.Total_iter += 1
-        self.states = []
-        self.actions = []
-        self.target_Q = []
-        self.advantage = []
-
-        while step < self.num_steps_per_rollout: 
-            episode_states = []
-            episode_actions = []
-            episode_rewards = []
-            episode_gammas = []
-            episode_lambdas = []    
-            state, done = env.reset(), False
-            t=0
-            episode_reward = 0
-
-            while not done and step < self.num_steps_per_rollout: 
-            # Select action randomly or according to policy
-                if self.Total_t < args.start_timesteps:
-                    if args.action_space == "Continuous":
-                        action = env.action_space.sample() 
-                    elif args.action_space == "Discrete":
-                        action = env.action_space.sample()  
-                else:
-                    action = AWAC_Q_lambda.select_action(self, state)
-            
-                self.states.append(state.transpose(2,0,1))
-                self.actions.append(action)
-                episode_states.append(state.transpose(2,0,1))
-                episode_actions.append(action)
-                episode_gammas.append(self.gae_gamma**t)
-                episode_lambdas.append(self.gae_lambda**t)
+    def Q_lambda_Peng_off(self, replay_buffer, ntrajs):
+        states = []
+        actions = []
+        target_Q = []
+        advantage = []
+        gammas_list = []
+        lambdas_list = []
+        
+        sampled_states, sampled_actions, sampled_rewards, sampled_lengths = replay_buffer.sample_trajectories(ntrajs)
+        
+        for l in range(ntrajs):
+            traj_size = sampled_lengths[l]
+            gammas = []
+            lambdas = []
+            for t in range(traj_size):
+                gammas.append(self.gae_gamma**t)
+                lambdas.append(self.gae_lambda**t)
                 
-                state, reward, done, _ = env.step(action)
+            gammas_list.append(torch.FloatTensor(np.array(gammas)).to(device))
+            lambdas_list.append(torch.FloatTensor(np.array(lambdas)).to(device))
                 
-                episode_rewards.append(reward)
+        for l in range(ntrajs):
             
-                t+=1
-                step+=1
-                episode_reward+=reward
-                self.Total_t += 1
-                        
-            if done: 
-                # +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
-                print(f"Total T: {self.Total_t}, Iter Num: {self.Total_iter}, Episode T: {t} Reward: {episode_reward:.3f}")
-                
-            episode_states = torch.FloatTensor(np.array(episode_states)).to(device)
-            
-            if self.action_space == "Discrete":
-                episode_actions = torch.LongTensor(np.array(episode_actions)).to(device)
-            elif self.action_space == "Continuous":
-                episode_actions = torch.FloatTensor(np.array(episode_actions))
-            
-            episode_rewards = torch.FloatTensor(np.array(episode_rewards)).to(device)
-            episode_gammas = torch.FloatTensor(np.array(episode_gammas)).to(device)
-            episode_lambdas = torch.FloatTensor(np.array(episode_lambdas)).to(device)
-            
-            traj_size = t
-            
-            self.actor.eval()
             with torch.no_grad():
+                episode_states = sampled_states[l]
+                episode_actions = sampled_actions[l]
+                episode_rewards = sampled_rewards[l] 
+                episode_gammas = gammas_list[l]
+                episode_lambdas = lambdas_list[l]
                 
-                Q1, Q2 = self.actor.critic_target(episode_states)
-                Q1_off = Q1.gather(1, episode_actions.long().unsqueeze(-1)) 
-                Q2_off = Q2.gather(1, episode_actions.long().unsqueeze(-1)) 
-                values_off = torch.min(Q1_off, Q2_off)
+                traj_size = sampled_lengths[l] 
+                
+                self.actor.eval()
                 
                 pi_action, log_pi = self.actor.sample(episode_states)
+                Q1_on, Q2_on = self.actor.critic_target(episode_states)
                 
                 if self.Entropy:
-                    current_Q1 = Q1.gather(1, pi_action.long().unsqueeze(-1)) 
-                    current_Q2 = Q2.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q1 = Q1_on.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q2 = Q2_on.gather(1, pi_action.long().unsqueeze(-1)) 
                     values = torch.min(current_Q1, current_Q2) - self.alpha*log_pi
                 else:
-                    current_Q1 = Q1.gather(1, pi_action.long().unsqueeze(-1)) 
-                    current_Q2 = Q2.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q1 = Q1_on.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q2 = Q2_on.gather(1, pi_action.long().unsqueeze(-1)) 
                     values = torch.min(current_Q1, current_Q2)
                     
                 final_bootstrap = values[-1].unsqueeze(-1)
                 next_values = values[1:]
-                next_action_values = torch.cat((episode_rewards[:-1].unsqueeze(-1) + self.gae_gamma*next_values, final_bootstrap))
+                next_action_values = torch.cat((episode_rewards[:-1] + self.gae_gamma*next_values, final_bootstrap))
                 
                 episode_adv = []
                 episode_Q = []
                 
                 for j in range(traj_size):
-                    off_policy_adjust = values_off[j:] 
+                    off_policy_adjust = torch.cat((torch.FloatTensor([[0.]]).to(device), values[j+1:]))     
                     episode_deltas = next_action_values[j:] - off_policy_adjust
-                    episode_Q.append(values_off[j] + ((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum())
-                    episode_adv.append(values_off[j] + ((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum() - values[j])
+                    episode_Q.append(((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum())
+                    episode_adv.append(((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum() - values[j])
                 
                 episode_advantage = torch.FloatTensor(episode_adv).to(device)
                 episode_target_Q = torch.FloatTensor(episode_Q).to(device)
             
-                self.advantage.append(episode_advantage)
-                self.target_Q.append(episode_target_Q)
+                states.append(episode_states)
+                actions.append(episode_actions)
+                target_Q.append(episode_target_Q)
+                advantage.append(episode_advantage)
                 
-    def TB_lambda(self, env, args):
-        step = 0
-        self.Total_iter += 1
-        self.states = []
-        self.actions = []
-        self.target_Q = []
-        self.advantage = []
-
-        while step < self.num_steps_per_rollout: 
-            episode_states = []
-            episode_actions = []
-            episode_rewards = []
-            episode_gammas = []
-            episode_lambdas = []    
-            state, done = env.reset(), False
-            t=0
-            episode_reward = 0
-
-            while not done and step < self.num_steps_per_rollout: 
-            # Select action randomly or according to policy
-                if self.Total_t < args.start_timesteps:
-                    if args.action_space == "Continuous":
-                        action = env.action_space.sample() 
-                    elif args.action_space == "Discrete":
-                        action = env.action_space.sample()  
-                else:
-                    action = AWAC_Q_lambda.select_action(self, state)
-            
-                self.states.append(state.transpose(2,0,1))
-                self.actions.append(action)
-                episode_states.append(state.transpose(2,0,1))
-                episode_actions.append(action)
-                episode_gammas.append(self.gae_gamma**t)
-                episode_lambdas.append(self.gae_lambda**t)
-                
-                state, reward, done, _ = env.step(action)
-                
-                episode_rewards.append(reward)
-            
-                t+=1
-                step+=1
-                episode_reward+=reward
-                self.Total_t += 1
-                        
-            if done: 
-                # +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
-                print(f"Total T: {self.Total_t}, Iter Num: {self.Total_iter}, Episode T: {t} Reward: {episode_reward:.3f}")
-                
-            episode_states = torch.FloatTensor(np.array(episode_states)).to(device)
-            
-            if self.action_space == "Discrete":
-                episode_actions = torch.LongTensor(np.array(episode_actions)).to(device)
-            elif self.action_space == "Continuous":
-                episode_actions = torch.FloatTensor(np.array(episode_actions))
-            
-            episode_rewards = torch.FloatTensor(np.array(episode_rewards)).to(device)
-            episode_gammas = torch.FloatTensor(np.array(episode_gammas)).to(device)
-            episode_lambdas = torch.FloatTensor(np.array(episode_lambdas)).to(device)
-            
-            traj_size = t
-            
-            self.actor.eval()
-            with torch.no_grad():
-                
-                Q1, Q2 = self.actor.critic_target(episode_states)
-                Q1_off = Q1.gather(1, episode_actions.long().unsqueeze(-1)) 
-                Q2_off = Q2.gather(1, episode_actions.long().unsqueeze(-1)) 
-                values_off = torch.min(Q1_off, Q2_off)
-                
-                pi_action, log_pi = self.actor.sample(episode_states)
-                
-                if self.Entropy:
-                    current_Q1 = Q1.gather(1, pi_action.long().unsqueeze(-1)) 
-                    current_Q2 = Q2.gather(1, pi_action.long().unsqueeze(-1)) 
-                    values = torch.min(current_Q1, current_Q2) - self.alpha*log_pi
-                else:
-                    current_Q1 = Q1.gather(1, pi_action.long().unsqueeze(-1)) 
-                    current_Q2 = Q2.gather(1, pi_action.long().unsqueeze(-1)) 
-                    values = torch.min(current_Q1, current_Q2)
-                    
-                final_bootstrap = values[-1].unsqueeze(-1)
-                next_values = values[1:]
-                next_action_values = torch.cat((episode_rewards[:-1].unsqueeze(-1) + self.gae_gamma*next_values, final_bootstrap))
-                
-                if self.action_space == "Discrete":
-                    _, log_prob_episode_full = self.actor.sample_log(episode_states, episode_actions)
+        return states, actions, target_Q, advantage
     
-                elif self.action_space == "Continuous": 
-                    log_prob_episode_full = self.actor.sample_log(episode_states, episode_actions)
-                
-                episode_adv = []
-                episode_Q = []
-                
-                for j in range(traj_size):
-                    
-                    try:
-                        log_prob_episode = log_prob_episode_full[j:]    
-                        r = torch.clamp((torch.exp(log_prob_episode)).squeeze(),0,1)
-                        pi_adjust = torch.FloatTensor([(r[:k]).prod() for k in range(1, len(r))]).to(device)
-                        pi_adjust_full = torch.cat((torch.FloatTensor([1.]).to(device), pi_adjust))
-                        
-                    except:
-                        pi_adjust_full = torch.FloatTensor([1.]).to(device)
-                    
-                    off_policy_adjust = values_off[j:] 
-                    episode_deltas = next_action_values[j:] - off_policy_adjust
-                    episode_Q.append(values_off[j] + ((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*pi_adjust_full*episode_deltas).sum())
-                    episode_adv.append(values_off[j] + ((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*pi_adjust_full*episode_deltas).sum() - values[j])
-                
-                episode_advantage = torch.FloatTensor(episode_adv).to(device)
-                episode_target_Q = torch.FloatTensor(episode_Q).to(device)
-            
-                self.advantage.append(episode_advantage)
-                self.target_Q.append(episode_target_Q)
-    
-    def train(self):
+    def train(self, states_off, actions_off, target_Q_off, advantage_off):
         self.total_it += 1
         
-        rollout_states = torch.FloatTensor(np.array(self.states)).to(device)
+        states_on = torch.FloatTensor(np.array(self.states)).to(device)
         
         if self.action_space == "Discrete":
-            rollout_actions = torch.LongTensor(np.array(self.actions)).to(device)
+            actions_on = torch.LongTensor(np.array(self.actions)).to(device)
         elif self.action_space == "Continuous":
-            rollout_actions = torch.FloatTensor(np.array(self.actions)).to(device)
+            actions_on = torch.FloatTensor(np.array(self.actions)).to(device)
         
-        rollout_target_Q = torch.cat(self.target_Q)
-        rollout_advantage = torch.cat(self.advantage).to(device)
+        target_Q_on = torch.cat(self.target_Q)
+        advantage_on = torch.cat(self.advantage).to(device)
+        
+        states_off = torch.cat(states_off)
+        rollout_states = torch.cat((states_on, states_off))
+        
+        actions_off = torch.cat(actions_off)
+        rollout_actions = torch.cat((actions_on, actions_off.squeeze()))
+        
+        target_Q_off = torch.cat(target_Q_off)
+        rollout_target_Q = torch.cat((target_Q_on, target_Q_off))
+        
+        advantage_off = torch.cat(advantage_off)
+        rollout_advantage = torch.cat((advantage_on, advantage_off))
         
         rollout_advantage = (rollout_advantage-rollout_advantage.mean())/(rollout_advantage.std()+1e-6)
         
         self.actor.train()
+        self.num_steps_per_rollout = len(rollout_advantage)
         max_steps = self.num_epochs * (self.num_steps_per_rollout // self.minibatch_size)
         
         for _ in range(max_steps):
