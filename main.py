@@ -654,7 +654,7 @@ if __name__ == "__main__":
     #General
     parser.add_argument("--mode", default="on_off_RL_from_observations", help='RL, offline_RL, on_off_RL_from_demonstrations, on_off_RL_from_observations')     
     parser.add_argument("--env", default="MiniGrid-Empty-16x16-v0")  
-    parser.add_argument("--data_set", default="rodent", help="random, human_expert, rodent")  
+    parser.add_argument("--data_set", default="human_expert", help="random, human_expert, rodent")  
     parser.add_argument("--action_space", default="Discrete")  # Sets Gym, PyTorch and Numpy seeds
     parser.add_argument("--grid_observability", default="Fully", help="Partial or Fully observable")
     parser.add_argument("--exploration_bonus", action = "store_true", help="reward to encourage exploration of less visited (state,action) pairs")
@@ -676,7 +676,7 @@ if __name__ == "__main__":
     parser.add_argument("--Entropy", action="store_true")
     parser.add_argument("--BC", action="store_true")
     # Evaluation
-    parser.add_argument("--evaluation_episodes", default=1, type=int) #10
+    parser.add_argument("--evaluation_episodes", default=10, type=int) #10
     parser.add_argument("--evaluation_max_n_steps", default = 2000, type=int)
     # Experiments
     parser.add_argument("--detect_gradient_anomaly", action="store_true")
