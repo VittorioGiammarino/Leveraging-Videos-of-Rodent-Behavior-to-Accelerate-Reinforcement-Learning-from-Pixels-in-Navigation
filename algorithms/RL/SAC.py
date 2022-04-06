@@ -37,10 +37,6 @@ class SAC(object):
             self.actor = SoftmaxHierarchicalActor.NN_PI_LO(state_dim, action_space_cardinality).to(device)
             self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=l_rate_actor)
             self.action_space = "Discrete"
-                    
-            # self.critic = Critic_flat_discrete(state_dim, action_space_cardinality).to(device)
-            # self.critic_target = copy.deepcopy(self.critic)
-            # self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=l_rate_critic)
         
         self.target_entropy = -torch.FloatTensor([action_dim]).to(device)
         self.log_alpha = torch.zeros(1, requires_grad=True, device = 'cuda')

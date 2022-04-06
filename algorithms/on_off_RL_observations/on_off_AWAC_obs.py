@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Aug 12 09:54:01 2021
+
+@author: vittorio
+"""
 import copy
 import numpy as np
 import torch
@@ -7,59 +14,50 @@ import torch.nn.functional as F
 from models.sample_models import TanhGaussianHierarchicalActor
 from models.sample_models import Critic_flat
 
-from models.simple_minigird_models import SoftmaxHierarchicalActor
+from models.on_off_obs_minigrid_models import SoftmaxActor
+from models.on_off_obs_minigrid_models import Discriminator
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Implementation of Twin Delayed Deep Deterministic Policy Gradients (TD3)
-# Paper: https://arxiv.org/abs/1802.09477
-
-    
-class on_off_SAC(object):
-    def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, Prioritized = False,
-                 l_rate_actor=1e-4, l_rate_critic=3e-4, l_rate_alpha=1e-4, discount=0.99, tau=0.005, 
-                 alpha=0.01, critic_freq=2):
+class on_off_AWAC_obs(object):
+    def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, Entropy = False, 
+                 Prioritized = False, l_rate_actor=1e-4, l_rate_critic=3e-4, l_rate_alpha=1e-4, 
+                 discount=0.99, beta = 3, tau=0.005, alpha=0.2, critic_freq=2, l_rate_discr = 3e-8, intrinsic_reward = 0.001):
         
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.action_space_cardinality = action_space_cardinality
-        self.max_action = max_action
+        self.max_action = max_action        
         
         if np.isinf(action_space_cardinality):
             self.actor = TanhGaussianHierarchicalActor.NN_PI_LO(state_dim, action_dim, max_action).to(device)
             self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=l_rate_actor)
             self.action_space = "Continuous"
             
-            self.critic = Critic_flat(state_dim, action_dim).to(device)
-            self.critic_target = copy.deepcopy(self.critic)
-            self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=l_rate_critic)
         else:
-            self.actor = SoftmaxHierarchicalActor.NN_PI_LO(state_dim, action_space_cardinality).to(device)
+            self.actor = SoftmaxActor(state_dim, action_space_cardinality).to(device)
             self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=l_rate_actor)
             self.action_space = "Discrete"
+            self.discriminator = Discriminator().to(device)
+            self.discriminator_optimizer = torch.optim.Adam(self.discriminator.parameters(), lr=l_rate_discr)
                     
-            # self.critic = Critic_flat_discrete(state_dim, action_space_cardinality).to(device)
-            # self.critic_target = copy.deepcopy(self.critic)
-            # self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=l_rate_critic)
-        
-        self.target_entropy = -torch.FloatTensor([action_dim]).to(device)
-        self.log_alpha = torch.zeros(1, requires_grad=True, device = 'cuda')
-        self.alpha_optim = torch.optim.Adam([self.log_alpha], lr = l_rate_alpha)     
-
-        self.state_dim = state_dim
-        self.action_dim = action_dim
-        self.action_space_cardinality = action_space_cardinality
-        self.max_action = max_action
-        
         self.discount = discount
         self.tau = tau
-        self.alpha = alpha
+        self.beta = beta
         self.critic_freq = critic_freq
+        
+        self.Entropy = Entropy
+        self.target_entropy = -torch.FloatTensor([action_dim]).to(device)
+        self.log_alpha = torch.zeros(1, requires_grad=True, device="cuda")
+        self.alpha_optim = torch.optim.Adam([self.log_alpha], lr = l_rate_alpha) 
+        self.alpha = alpha
         
         self.Prioritized = Prioritized
 
         self.total_it = 0
         
+        self.intrinsic_reward = 0.001
+                
     def select_action(self, state):
         with torch.no_grad():
             if self.action_space == "Discrete":
@@ -71,8 +69,8 @@ class on_off_SAC(object):
                 state = torch.FloatTensor(state.reshape(1, -1)).to(device)
                 action, _, _ = self.actor.sample_SAC_continuous(state)
                 return (action).cpu().data.numpy().flatten()
-
-    def train(self, replay_buffer_online, replay_buffer_offline, batch_size=256):
+    
+    def train(self, replay_buffer_online, off_policy_data, batch_size=128):
         self.total_it += 1
 
         # Sample replay buffer 
@@ -81,35 +79,52 @@ class on_off_SAC(object):
             state_on, action_on, next_state_on, reward_on, cost_on, not_done_on = batch
         else:
             state_on, action_on, next_state_on, reward_on, cost_on, not_done_on = replay_buffer_online.sample(batch_size)
-            
-        state_off, action_off, next_state_off, reward_off, cost_off, not_done_off = replay_buffer_offline.sample(batch_size)
+        
+        size_off_policy_data = len(off_policy_data)
+        ind = np.random.randint(0, size_off_policy_data-1, size = batch_size)
+        
+        state_off = torch.FloatTensor(np.array([off_policy_data[ind]]).squeeze(0)).to(device)
+        next_state_off = torch.FloatTensor(np.array([off_policy_data[ind+1]]).squeeze(0)).to(device)
+        action_off = self.actor.sample_inverse_model(state_off, next_state_off).unsqueeze(1)
+        reward_off_inv = self.actor.forward_inv_reward(state_off, next_state_off)
+        reward_i = self.intrinsic_reward*torch.ones_like(reward_off_inv)  
+        reward_off = (reward_off_inv + reward_i).to(device)
         
         state = torch.cat([state_on, state_off])
         action = torch.cat([action_on, action_off])
         next_state = torch.cat([next_state_on, next_state_off])
         reward = torch.cat([reward_on, reward_off])
-        cost = torch.cat([cost_on, cost_off])
-        not_done = torch.cat([not_done_on, not_done_off])
+        cost = torch.cat([cost_on, torch.zeros_like(cost_on, device=device)])
+        not_done = torch.cat([not_done_on, torch.ones_like(not_done_on, device=device)])
 
         with torch.no_grad():
             # Select action according to policy and add clipped noise
 			
             if self.action_space == "Discrete":
-                # Compute the target Q value
                 next_action, log_pi_next_state = self.actor.sample(next_state)
                 target_Q1, target_Q2 = self.actor.critic_target(next_state)
                 current_target_Q1 = target_Q1.gather(1, next_action.detach().long().unsqueeze(-1)) 
                 current_target_Q2 = target_Q2.gather(1, next_action.detach().long().unsqueeze(-1)) 
-                target_Q = (torch.min(current_target_Q1, current_target_Q2) - self.alpha*log_pi_next_state)
-                target_Q = reward-cost + not_done * self.discount * target_Q.sum(dim=1).unsqueeze(-1)
+                
+                if self.Entropy:
+                    target_Q = (torch.min(current_target_Q1, current_target_Q2) - self.alpha*log_pi_next_state)
+                    target_Q = reward-cost + not_done * self.discount * target_Q.sum(dim=1).unsqueeze(-1)
+                else:
+                    target_Q = torch.min(current_target_Q1, current_target_Q2)
+                    target_Q = reward-cost + not_done * self.discount * target_Q.sum(dim=1).unsqueeze(-1)                  
                 
             elif self.action_space == "Continuous":
                 next_action, log_pi_next_state, _ = self.actor.sample_SAC_continuous(next_state)
                     
                 # Compute the target Q value
                 target_Q1, target_Q2 = self.critic_target(next_state, next_action)
-                target_Q = torch.min(target_Q1, target_Q2) - self.alpha*log_pi_next_state
-                target_Q = reward-cost + not_done * self.discount * target_Q
+                
+                if self.Entropy:
+                    target_Q = torch.min(target_Q1, target_Q2) - self.alpha*log_pi_next_state
+                    target_Q = reward + not_done * self.discount * target_Q
+                else:
+                    target_Q = torch.min(target_Q1, target_Q2)
+                    target_Q = reward + not_done * self.discount * target_Q
 
         if self.action_space == "Discrete":
             Q1, Q2 = self.actor.critic_net(state)
@@ -142,29 +157,72 @@ class on_off_SAC(object):
             pi_action, log_pi_state = self.actor.sample(state)
             actor_Q1 = Q1.gather(1, pi_action.detach().long().unsqueeze(-1)) 
             actor_Q2 = Q2.gather(1, pi_action.detach().long().unsqueeze(-1)) 
-            minQ = torch.min(actor_Q1, actor_Q2)
-      
-            actor_loss = (self.alpha*log_pi_state-minQ).mean()
+            value_function = torch.min(actor_Q1, actor_Q2)
+            
+            old_Q1 = Q1.gather(1, action.detach().long()) 
+            old_Q2 = Q2.gather(1, action.detach().long()) 
+            old_Q = torch.min(old_Q1, old_Q2)
+            adv_pi = old_Q - value_function
+            weights = F.softmax(adv_pi/self.beta, dim=0).detach()
+            _, log_pi_state_action = self.actor.sample_log(state, action)            
+            
+            if self.Entropy:
+                actor_loss = (-1)*(-self.alpha*log_pi_state + log_pi_state_action*weights).mean()
+            else:
+                actor_loss = (-1)*(log_pi_state_action*weights).mean()
             
         elif self.action_space == "Continuous":
-            action, log_pi_state, _ = self.actor.sample_SAC_continuous(state)
-            Q1, Q2 = self.critic(state, action)
-            minQ = torch.min(Q1,Q2)
+            pi_action, log_pi_state, _ = self.actor.sample_SAC_continuous(state)
+            Q1, Q2 = self.critic(state, pi_action)
+            value_function = torch.min(Q1,Q2)
+            
+            Q1_old, Q2_old = self.critic(state, action)
+            Q_old_actions = torch.min(Q1_old, Q2_old)
+            
+            adv_pi = Q_old_actions - value_function
+            weights = F.softmax(adv_pi/self.beta, dim=0).detach()
+            log_pi_state_action = self.actor.sample_log(state, action)
 
-            actor_loss = ((self.alpha*log_pi_state)-minQ).mean()
+            if self.Entropy:
+                actor_loss = (-1)*(-self.alpha*log_pi_state + log_pi_state_action*weights).mean()
+            else:
+                actor_loss = (-1)*(log_pi_state_action*weights).mean()
+
+        inverse_action_model_prob = self.actor.forward_inv_a(state_on, next_state_on)
+        m = F.one_hot(action_on.squeeze().cpu(), self.action_space_cardinality).float().to(device)
+        L_ia = F.mse_loss(inverse_action_model_prob, m)
+        
+        L_ir = F.mse_loss(reward_on, self.actor.forward_inv_reward(state_on, next_state_on))
+                
+        state_off_class = torch.zeros(batch_size, device=device)
+        state_on_class = torch.ones(batch_size, device=device)
+        criterion = torch.nn.BCELoss()
+        
+        d_loss_rollout = criterion(self.discriminator(self.actor.encode_image(state_on).detach()).squeeze(), state_on_class) 
+        d_loss_obs = criterion(self.discriminator(self.actor.encode_image(state_off).detach()).squeeze(), state_off_class) 
+        d_loss = 0.5*(d_loss_rollout + d_loss_obs)
+        
+        self.discriminator_optimizer.zero_grad()
+        d_loss.backward()
+        self.discriminator_optimizer.step()
+        
+        encode_loss = criterion(self.discriminator(self.actor.encode_image(state_off)).squeeze(), state_on_class)   
 			
         # Optimize the actor 
         self.actor_optimizer.zero_grad()
-        actor_loss.backward()
+        loss = actor_loss + L_ia + L_ir + encode_loss
+        loss.backward()
         self.actor_optimizer.step()
-                   
-        alpha_loss = -(self.log_alpha * (log_pi_state + self.target_entropy).detach()).mean()
+			        
+        if self.Entropy: 
 
-        self.alpha_optim.zero_grad()
-        alpha_loss.backward()
-        self.alpha_optim.step()
-
-        self.alpha = self.log_alpha.exp()
+            alpha_loss = -(self.log_alpha * (log_pi_state + self.target_entropy).detach()).mean()
+    
+            self.alpha_optim.zero_grad()
+            alpha_loss.backward()
+            self.alpha_optim.step()
+    
+            self.alpha = self.log_alpha.exp()
 
         # Update the frozen target models
         if self.total_it % self.critic_freq == 0:
@@ -192,4 +250,18 @@ class on_off_SAC(object):
         self.critic.load_state_dict(torch.load(filename + "_critic"))
         self.critic_optimizer.load_state_dict(torch.load(filename + "_critic_optimizer"))
         self.critic_target = copy.deepcopy(self.critic)
-		
+        
+        
+        
+        
+        
+        
+
+            
+            
+        
+            
+            
+            
+
+        

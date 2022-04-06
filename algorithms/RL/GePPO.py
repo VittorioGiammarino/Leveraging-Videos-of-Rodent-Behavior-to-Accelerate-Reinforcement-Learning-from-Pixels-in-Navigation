@@ -12,13 +12,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models.sample_models import TanhGaussianHierarchicalActor
-from models.sample_models import Value_net
+from models.sample_models import Critic_flat
 
 from models.simple_minigird_models import SoftmaxHierarchicalActor
-from models.simple_minigird_models import Value_net_CNN
-
-from models.ResMLP import SoftmaxHierarchicalActorMLP
-from models.ResMLP import ValueNetMLP
 
 from Buffers.v_trace_buffer import V_trace_Buffer
 
@@ -38,10 +34,7 @@ class GePPO:
             self.actor = SoftmaxHierarchicalActor.NN_PI_LO(state_dim, action_space_cardinality)
             self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=l_rate_actor)
             self.action_space = "Discrete"
-            
-        # self.value_function = Value_net_CNN(state_dim).to(device)
-        # self.value_function_optimizer = torch.optim.Adam(self.value_function.parameters(), lr=l_rate_actor)
-      
+                  
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.action_space_cardinality = action_space_cardinality

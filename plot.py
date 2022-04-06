@@ -52,12 +52,106 @@ colors['HGePPO_3'] = 'magenta'
 colors['HTD3_3'] = 'lightseagreen'
 colors['HSAC_3'] = 'peru'
 
-# %%
+# %% Classical Algorithms from the literature
 
-RL_algorithms = ['AWAC', 'AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 
-                  'GeA2C', 'GePPO', 'PPO', 'SAC', 'TD3']
+# RL_algorithms = ['AWAC', 'AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 
+#                   'GeA2C', 'GePPO', 'PPO', 'SAC', 'TD3']
 
-# RL_algorithms = ['PPO', 'PPO_from_videos']
+RL_algorithms = ['GePPO', 'PPO', 'SAC', 'TD3']
+
+colors = {}
+
+Top_three = True
+
+colors['AWAC'] = 'tab:blue'
+colors['AWAC_GAE'] = 'tab:orange'
+colors['AWAC_Q_lambda_Haru'] = 'lime'
+colors['AWAC_Q_lambda_Peng'] = 'tab:purple'
+colors['AWAC_Q_lambda_TB'] = 'tab:brown'
+colors['GeA2C'] = 'tab:green'
+colors['GePPO'] = 'tab:gray'
+colors['PPO'] = 'chocolate'
+colors['SAC'] = 'tab:olive'
+colors['TD3'] = 'tab:cyan'
+
+environments = ['MiniGrid-Empty-16x16-v0']
+
+for env in environments:
+    
+    columns = 2
+    rows = 1
+    
+    fig, ax = plt.subplots(rows, columns, figsize=(12,4))
+    plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
+    # fig.suptitle(env, fontsize="xx-large")
+    
+    for k, ax_row in enumerate([ax]):
+        for j, axes in enumerate(ax_row):
+    
+            for i in range(len(RL_algorithms)):
+    
+                
+                if j == 0:
+                    Top_three = False
+                else:
+                    Top_three = True
+            
+                policy = RL_algorithms[i]
+                
+                RL = []
+                
+                for seed in range(10):
+                    
+                    try:
+                        if policy == "TD3" or policy == "SAC":
+                            with open(f'results_partial/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
+                                RL.append(np.load(f, allow_pickle=True))  
+                        else:
+                            with open(f'results_partial/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
+                                RL.append(np.load(f, allow_pickle=True))    
+                                
+                    except:
+                        continue
+                        
+                try:
+                    if Top_three:
+                        temp = []
+                        RL_temp = []
+                        for i in range(10):
+                            temp.append([RL[i][-1], i])
+                            
+                        temp.sort()
+                            
+                        RL_temp.append(RL[temp[-1][1]])
+                        RL_temp.append(RL[temp[-2][1]])
+                        RL_temp.append(RL[temp[-3][1]])
+                        
+                        RL = RL_temp
+                            
+                    
+                    mean = np.mean(np.array(RL), 0)
+                    steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
+                    std = np.std(np.array(RL),0)
+                    axes.plot(steps, mean, label=policy, c=colors[policy])
+                    axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+                    
+                    axes.set_ylim([0, 1.05])
+                    axes.set_xlabel('Frames')
+                    axes.set_ylabel('Reward')
+                except:
+                    continue
+
+    if not os.path.exists(f"./Figures/{env}"):
+        os.makedirs(f"./Figures/{env}")
+   
+    handles, labels = axes.get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=4, prop={'size': 12})
+           
+    plt.savefig(f'Figures/{env}/{env}_Online_RL.pdf', format='pdf', bbox_inches='tight')
+
+# %% Advantage Weighted Regression
+
+RL_algorithms = ['AWAC', 'AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB']
 
 colors = {}
 
@@ -76,55 +170,259 @@ environments = ['MiniGrid-Empty-16x16-v0']
 
 for env in environments:
     
-    columns = 1
+    columns = 2
     rows = 1
     
-    fig, ax = plt.subplots(rows, columns)
+    fig, ax = plt.subplots(rows, columns, figsize=(12,4))
     plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
-    fig.suptitle(env, fontsize="xx-large")
     
-    for i in range(len(RL_algorithms)):
+    for k, ax_row in enumerate([ax]):
+        for j, axes in enumerate(ax_row):
     
-    # for k, ax_row in enumerate(ax):
-    #     for j, axes in enumerate(ax_row):
-            
-        policy = RL_algorithms[i]
-        
-        RL = []
-        
-        for seed in range(10):
-            
-            try:
-                if policy == "TD3" or policy == "SAC":
-                    with open(f'results_partial/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
-                        RL.append(np.load(f, allow_pickle=True))  
-                else:
-                    with open(f'results_partial/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
-                        RL.append(np.load(f, allow_pickle=True))    
-                        
-            except:
-                continue
+            for i in range(len(RL_algorithms)):
                 
-        try:
-            mean = np.mean(np.array(RL), 0)
-            steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
-            std = np.std(np.array(RL),0)
-            ax.plot(steps, mean, label=policy, c=colors[policy])
-            ax.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
-        except:
-            continue
+                if j == 0:
+                    Top_three = False
+                else:
+                    Top_three = True
+            
+                policy = RL_algorithms[i]
+                
+                RL = []
+                
+                for seed in range(10):
+                    
+                    try:
+                        if policy == "TD3" or policy == "SAC":
+                            with open(f'results_partial/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
+                                RL.append(np.load(f, allow_pickle=True))  
+                        else:
+                            with open(f'results_partial/RL/evaluation_RL_{policy}_Entropy_False_{env}_{seed}.npy', 'rb') as f:
+                                RL.append(np.load(f, allow_pickle=True))    
+                                
+                    except:
+                        continue
+                        
+                try:
+                    
+                    if Top_three:
+                        temp = []
+                        RL_temp = []
+                        for i in range(10):
+                            temp.append([RL[i][-1], i])
+                            
+                        temp.sort()
+                            
+                        RL_temp.append(RL[temp[-1][1]])
+                        RL_temp.append(RL[temp[-2][1]])
+                        RL_temp.append(RL[temp[-3][1]])
+                        
+                        RL = RL_temp
+                    
+                    mean = np.mean(np.array(RL), 0)
+                    steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
+                    std = np.std(np.array(RL),0)
+                    axes.plot(steps, mean, label=policy, c=colors[policy])
+                    axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+                    
+                    axes.set_ylim([0, 1.05])
+                    axes.set_xlabel('Frames')
+                    axes.set_ylabel('Reward')
+                except:
+                    continue
 
     if not os.path.exists(f"./Figures/{env}"):
         os.makedirs(f"./Figures/{env}")
               
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3)
-    ax.set_xlabel('Frames')
-    ax.set_ylabel('Reward')
-    plt.savefig(f'Figures/{env}/{env}_Online_RL.pdf', format='pdf', bbox_inches='tight')
+    handles, labels = axes.get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3, prop={'size': 12})
+           
+    plt.savefig(f'Figures/{env}/{env}_AWR.pdf', format='pdf', bbox_inches='tight')
+    
+for env in environments:
+    
+    columns = 2
+    rows = 1
+    
+    fig, ax = plt.subplots(rows, columns, figsize=(12,4))
+    plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
+    
+    for k, ax_row in enumerate([ax]):
+        for j, axes in enumerate(ax_row):
+    
+            for i in range(len(RL_algorithms)):
+                
+                if j == 0:
+                    Top_three = False
+                else:
+                    Top_three = True
+            
+                policy = RL_algorithms[i]
+                
+                RL = []
+                
+                for seed in range(10):
+                    
+                    try:
+                        if policy == "TD3" or policy == "SAC":
+                            with open(f'results_partial/RL/evaluation_RL_{policy}_{env}_{seed}.npy', 'rb') as f:
+                                RL.append(np.load(f, allow_pickle=True))  
+                        else:
+                            with open(f'results_partial/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
+                                RL.append(np.load(f, allow_pickle=True))    
+                                
+                    except:
+                        continue
+                        
+                try:
+                    
+                    if Top_three:
+                        temp = []
+                        RL_temp = []
+                        for i in range(10):
+                            temp.append([RL[i][-1], i])
+                            
+                        temp.sort()
+                            
+                        RL_temp.append(RL[temp[-1][1]])
+                        RL_temp.append(RL[temp[-2][1]])
+                        RL_temp.append(RL[temp[-3][1]])
+                        
+                        RL = RL_temp
+                    
+                    mean = np.mean(np.array(RL), 0)
+                    steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
+                    std = np.std(np.array(RL),0)
+                    axes.plot(steps, mean, label=policy, c=colors[policy])
+                    axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+                    
+                    axes.set_ylim([0, 1.05])
+                    axes.set_xlabel('Frames')
+                    axes.set_ylabel('Reward')
+                except:
+                    continue
+
+    if not os.path.exists(f"./Figures/{env}"):
+        os.makedirs(f"./Figures/{env}")
+              
+    handles, labels = axes.get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3, prop={'size': 12})
+           
+    plt.savefig(f'Figures/{env}/{env}_AWR_Entropy_True.pdf', format='pdf', bbox_inches='tight')
+
+
+# %% Offline RL from expert
+
+RL_algorithms = ['AWAC', 'AWR', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 'BC', 'SAC_BC']
+
+data_set = ['human_expert', 'random']
+environments = ['MiniGrid-Empty-16x16-v0']
+
+colors = {}
+
+data_set = ['human_expert', 'random']
+environments = ['MiniGrid-Empty-16x16-v0']
+
+colors['AWAC'] = 'tab:blue'
+colors['AWR'] = 'tab:orange'
+colors['AWAC_Q_lambda_Haru'] = 'lime'
+colors['AWAC_Q_lambda_Peng'] = 'tab:purple'
+colors['AWAC_Q_lambda_TB'] = 'tab:brown'
+colors['BC'] = 'tab:green'
+colors['SAC_BC'] = 'tab:gray'
+
+environments = ['MiniGrid-Empty-16x16-v0']
+
+for env in environments:
+    for data in data_set:
+    
+        columns = 2
+        rows = 1
+        
+        fig, ax = plt.subplots(rows, columns, figsize=(12,4))
+        plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
+        
+        for k, ax_row in enumerate([ax]):
+            for j, axes in enumerate(ax_row):
+        
+                for i in range(len(RL_algorithms)):
+                    
+                    if j == 0:
+                        Top_three = False
+                    else:
+                        Top_three = True
+                
+                    policy = RL_algorithms[i]
+                    
+                    if policy == 'AWR':
+                        policy_label = 'AWAC_GAE'
+                    else:
+                        policy_label = policy
+                        
+                    a_file = open(f"offline_data_set/data_set_{env}_{data}.pkl", "rb")
+                    offline_set = pickle.load(a_file)   
+                    
+                    reward_set = np.sum(offline_set['rewards'])/np.sum(offline_set['terminals'])
+                    
+                    RL = []
+                    
+                    for seed in range(10):
+                        try:
+                            if policy == "BC" or policy == "SAC_BC":
+                                with open(f'results_partial/offline_RL/evaluation_offline_RL_{policy}_{env}_dataset_{data}_{seed}.npy', 'rb') as f:
+                                    RL.append(np.load(f, allow_pickle=True))  
+                            else:
+                                with open(f'results_partial/offline_RL/evaluation_offline_RL_{policy}_Entropy_False_{env}_dataset_{data}_{seed}.npy', 'rb') as f:
+                                    RL.append(np.load(f, allow_pickle=True))    
+                                    
+                        except:
+                            continue
+                            
+                    try:
+                        
+                        if Top_three:
+                            temp = []
+                            RL_temp = []
+                            for i in range(10):
+                                temp.append([RL[i][-1], i])
+                                
+                            temp.sort()
+                                
+                            RL_temp.append(RL[temp[-1][1]])
+                            RL_temp.append(RL[temp[-2][1]])
+                            RL_temp.append(RL[temp[-3][1]])
+                            
+                            RL = RL_temp
+                        
+                        mean = np.mean(np.array(RL), 0)
+                        steps = np.linspace(0, 100, len(mean))
+                        std = np.std(np.array(RL),0)
+                        axes.plot(steps, mean, label=policy_label, c=colors[policy])
+                        axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
+                        
+                        axes.set_ylim([0, 1.05])
+                        axes.set_xlabel('Frames')
+                        axes.set_ylabel('Reward')
+                        
+                        print(f'dataset: {data}, agent: {policy}, reward: {mean[-1]}, std: {std[-1]} ,Top Three: {Top_three}')
+                        
+                    except:
+                        continue
+                    
+                axes.plot(steps, reward_set*np.ones((len(steps))), 'k--', label='average reward data set')
+    
+        if not os.path.exists(f"./Figures/{env}"):
+            os.makedirs(f"./Figures/{env}")
+                  
+        handles, labels = axes.get_legend_handles_labels()
+        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3, prop={'size': 12})
+               
+        plt.savefig(f'Figures/{env}/offline_RL_{env}_dataset_{data}.pdf', format='pdf', bbox_inches='tight')
+
 
 # %%
 
-RL_algorithms = ['PPO']
+RL_algorithms = ['GePPO']
 
 # RL_algorithms = ['AWAC', 'AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 
 #                  'GeA2C', 'GePPO', 'PPO', 'SAC', 'TD3']

@@ -11,13 +11,10 @@ from models.simple_minigird_models import SoftmaxHierarchicalActor
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Implementation of Twin Delayed Deep Deterministic Policy Gradients (TD3)
-# Paper: https://arxiv.org/abs/1802.09477
-  
-class SAC_BC(object):
-    def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, 
-                 BC = False, Prioritized = False, l_rate_actor=3e-4, l_rate_critic=3e-4, l_rate_alpha=1e-4, 
-                 discount=0.99, tau=0.005, alpha=0.01, critic_freq=2):
+class on_off_SAC(object):
+    def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, Prioritized = False,
+                 l_rate_actor=1e-4, l_rate_critic=3e-4, l_rate_alpha=1e-4, discount=0.99, tau=0.005, 
+                 alpha=0.01, critic_freq=2):
         
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -40,11 +37,6 @@ class SAC_BC(object):
         self.target_entropy = -torch.FloatTensor([action_dim]).to(device)
         self.log_alpha = torch.zeros(1, requires_grad=True, device = 'cuda')
         self.alpha_optim = torch.optim.Adam([self.log_alpha], lr = l_rate_alpha)     
-
-        self.state_dim = state_dim
-        self.action_dim = action_dim
-        self.action_space_cardinality = action_space_cardinality
-        self.max_action = max_action
         
         self.discount = discount
         self.tau = tau
@@ -52,7 +44,6 @@ class SAC_BC(object):
         self.critic_freq = critic_freq
         
         self.Prioritized = Prioritized
-        self.BC = BC
 
         self.total_it = 0
         
@@ -68,15 +59,24 @@ class SAC_BC(object):
                 action, _, _ = self.actor.sample_SAC_continuous(state)
                 return (action).cpu().data.numpy().flatten()
 
-    def train(self, replay_buffer, batch_size=256):
+    def train(self, replay_buffer_online, replay_buffer_offline, batch_size=128):
         self.total_it += 1
 
         # Sample replay buffer 
         if self.Prioritized:
-            batch, weights, tree_idxs = replay_buffer.sample(batch_size)  
-            state, action, next_state, reward, cost, not_done = batch
+            batch, weights, tree_idxs = replay_buffer_online.sample(batch_size)  
+            state_on, action_on, next_state_on, reward_on, cost_on, not_done_on = batch
         else:
-            state, action, next_state, reward, cost, not_done = replay_buffer.sample(batch_size)
+            state_on, action_on, next_state_on, reward_on, cost_on, not_done_on = replay_buffer_online.sample(batch_size)
+            
+        state_off, action_off, next_state_off, reward_off, cost_off, not_done_off = replay_buffer_offline.sample(batch_size)
+        
+        state = torch.cat([state_on, state_off])
+        action = torch.cat([action_on, action_off])
+        next_state = torch.cat([next_state_on, next_state_off])
+        reward = torch.cat([reward_on, reward_off])
+        cost = torch.cat([cost_on, cost_off])
+        not_done = torch.cat([not_done_on, not_done_off])
 
         with torch.no_grad():
             # Select action according to policy and add clipped noise
@@ -124,20 +124,14 @@ class SAC_BC(object):
         if self.Prioritized:
             self.Buffer.update_priorities(tree_idxs, td_error.detach())
 
-        if self.action_space == "Discrete":                
+        if self.action_space == "Discrete":
             Q1, Q2 = self.actor.critic_net(state)
             pi_action, log_pi_state = self.actor.sample(state)
             actor_Q1 = Q1.gather(1, pi_action.detach().long().unsqueeze(-1)) 
             actor_Q2 = Q2.gather(1, pi_action.detach().long().unsqueeze(-1)) 
             minQ = torch.min(actor_Q1, actor_Q2)
-            
-            if self.BC:
-                action_prob = self.actor(state)  
-                m = F.one_hot(action.squeeze().cpu(), self.action_space_cardinality).float().to(device)
-                lmbda = self.alpha/(minQ).abs().mean().detach()
-                actor_loss = lmbda*(self.alpha*log_pi_state-minQ).mean() + F.mse_loss(action_prob, m)
-            else:
-                actor_loss = (self.alpha*log_pi_state-minQ).mean()
+      
+            actor_loss = (self.alpha*log_pi_state-minQ).mean()
             
         elif self.action_space == "Continuous":
             action, log_pi_state, _ = self.actor.sample_SAC_continuous(state)
@@ -150,7 +144,7 @@ class SAC_BC(object):
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
-        
+                   
         alpha_loss = -(self.log_alpha * (log_pi_state + self.target_entropy).detach()).mean()
 
         self.alpha_optim.zero_grad()

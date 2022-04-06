@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Aug 12 09:54:01 2021
+
+@author: vittorio
+"""
 import copy
 import numpy as np
 import torch
@@ -10,10 +17,6 @@ from models.sample_models import Critic_flat
 from models.simple_minigird_models import SoftmaxHierarchicalActor
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Implementation of Twin Delayed Deep Deterministic Policy Gradients (TD3)
-# Paper: https://arxiv.org/abs/1802.09477
-
     
 class AWAC(object):
     def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, Entropy = False, 
@@ -37,10 +40,6 @@ class AWAC(object):
             self.actor = SoftmaxHierarchicalActor.NN_PI_LO(state_dim, action_space_cardinality).to(device)
             self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=l_rate_actor)
             self.action_space = "Discrete"
-                    
-            # self.critic = Critic_flat_discrete(state_dim, action_space_cardinality).to(device)
-            # self.critic_target = copy.deepcopy(self.critic)
-            # self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=l_rate_critic)   
 
         self.state_dim = state_dim
         self.action_dim = action_dim

@@ -11,22 +11,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 from models.sample_models import TanhGaussianHierarchicalActor
 from models.sample_models import Value_net
 
-from models.simple_minigird_models import SoftmaxHierarchicalActor
-from models.simple_minigird_models import Value_net_CNN
-
-from models.ResMLP import SoftmaxHierarchicalActorMLP
-from models.ResMLP import ValueNetMLP
+from models.on_off_obs_minigrid_models import SoftmaxActor
+from models.on_off_obs_minigrid_models import Discriminator
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class on_off_AWAC_Q_lambda_haru:
+class on_off_AWAC_Q_lambda_Peng_obs:
     def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, Entropy = True,   
-                 num_steps_per_rollout=2000, l_rate_actor=3e-4, l_rate_alpha=3e-4, discount=0.99, tau=0.005, beta=3, 
-                 gae_gamma = 0.99, gae_lambda = 0.99, minibatch_size=64, num_epochs=10, alpha=0.2, critic_freq=2):
+                 num_steps_per_rollout=2000, number_obs_off_per_traj=100, l_rate_actor=3e-4, 
+                 l_rate_alpha=3e-4, discount=0.99, tau=0.005, beta=3, gae_gamma = 0.99, gae_lambda = 0.99, minibatch_size=64, 
+                 num_epochs=10, alpha=0.2, critic_freq=2, l_rate_discr = 3e-8, intrinsic_reward = 0.1):
         
         if np.isinf(action_space_cardinality):
             self.actor = TanhGaussianHierarchicalActor.NN_PI_LO(state_dim, action_dim, max_action).to(device)
@@ -34,12 +31,11 @@ class on_off_AWAC_Q_lambda_haru:
             self.action_space = "Continuous"
             
         else:
-            self.actor = SoftmaxHierarchicalActor.NN_PI_LO(state_dim, action_space_cardinality).to(device)
+            self.actor = SoftmaxActor(state_dim, action_space_cardinality).to(device)
             self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=l_rate_actor)
             self.action_space = "Discrete"
-            
-        # self.value_function = Value_net_CNN(state_dim).to(device)
-        # self.value_function_optimizer = torch.optim.Adam(self.value_function.parameters(), lr=l_rate_actor)
+            self.discriminator = Discriminator().to(device)
+            self.discriminator_optimizer = torch.optim.Adam(self.discriminator.parameters(), lr=l_rate_discr)
       
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -60,6 +56,7 @@ class on_off_AWAC_Q_lambda_haru:
         self.actions = []
         self.target_Q = []
         self.advantage = []
+        self.reward = []
         
         self.Entropy = Entropy
         self.target_entropy = -torch.FloatTensor([action_dim]).to(device)
@@ -70,6 +67,9 @@ class on_off_AWAC_Q_lambda_haru:
         self.Total_t = 0
         self.Total_iter = 0
         self.total_it = 0
+        
+        self.number_obs_off_per_traj = int(number_obs_off_per_traj)
+        self.intrinsic_reward = intrinsic_reward
         
     def reset_counters(self):
         self.Total_t = 0
@@ -86,14 +86,15 @@ class on_off_AWAC_Q_lambda_haru:
                 state = torch.FloatTensor(state.reshape(1, -1)).to(device)
                 action, _, _ = self.actor.sample(state)
                 return (action).cpu().data.numpy().flatten()
-                
-    def Q_lambda_Haru(self, env, args):
+        
+    def Q_lambda_Peng(self, env, args):
         step = 0
         self.Total_iter += 1
         self.states = []
         self.actions = []
         self.target_Q = []
         self.advantage = []
+        self.reward = []
 
         while step < self.num_steps_per_rollout_on: 
             episode_states = []
@@ -113,7 +114,7 @@ class on_off_AWAC_Q_lambda_haru:
                     elif args.action_space == "Discrete":
                         action = env.action_space.sample()  
                 else:
-                    action = on_off_AWAC_Q_lambda_haru.select_action(self, state)
+                    action = on_off_AWAC_Q_lambda_Peng_obs.select_action(self, state)
             
                 self.states.append(state.transpose(2,0,1))
                 self.actions.append(action)
@@ -151,20 +152,16 @@ class on_off_AWAC_Q_lambda_haru:
             self.actor.eval()
             with torch.no_grad():
                 
-                Q1, Q2 = self.actor.critic_target(episode_states)
-                Q1_off = Q1.gather(1, episode_actions.long().unsqueeze(-1)) 
-                Q2_off = Q2.gather(1, episode_actions.long().unsqueeze(-1)) 
-                values_off = torch.min(Q1_off, Q2_off)
-                
                 pi_action, log_pi = self.actor.sample(episode_states)
+                Q1_on, Q2_on = self.actor.critic_target(episode_states)
                 
                 if self.Entropy:
-                    current_Q1 = Q1.gather(1, pi_action.long().unsqueeze(-1)) 
-                    current_Q2 = Q2.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q1 = Q1_on.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q2 = Q2_on.gather(1, pi_action.long().unsqueeze(-1)) 
                     values = torch.min(current_Q1, current_Q2) - self.alpha*log_pi
                 else:
-                    current_Q1 = Q1.gather(1, pi_action.long().unsqueeze(-1)) 
-                    current_Q2 = Q2.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q1 = Q1_on.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q2 = Q2_on.gather(1, pi_action.long().unsqueeze(-1)) 
                     values = torch.min(current_Q1, current_Q2)
                     
                 final_bootstrap = values[-1].unsqueeze(-1)
@@ -175,18 +172,19 @@ class on_off_AWAC_Q_lambda_haru:
                 episode_Q = []
                 
                 for j in range(traj_size):
-                    off_policy_adjust = values_off[j:] 
+                    off_policy_adjust = torch.cat((torch.FloatTensor([[0.]]).to(device), values[j+1:]))     
                     episode_deltas = next_action_values[j:] - off_policy_adjust
-                    episode_Q.append(values_off[j] + ((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum())
-                    episode_adv.append(values_off[j] + ((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum() - values[j])
+                    episode_Q.append(((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum())
+                    episode_adv.append(((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum() - values[j])
                 
                 episode_advantage = torch.FloatTensor(episode_adv).to(device)
                 episode_target_Q = torch.FloatTensor(episode_Q).to(device)
             
                 self.advantage.append(episode_advantage)
                 self.target_Q.append(episode_target_Q)
-                
-    def Q_lambda_Haru_off(self, replay_buffer, ntrajs):
+                self.reward.append(episode_rewards)
+    
+    def Q_lambda_Peng_off(self, off_policy_data, ntrajs):
         states = []
         actions = []
         target_Q = []
@@ -194,10 +192,27 @@ class on_off_AWAC_Q_lambda_haru:
         gammas_list = []
         lambdas_list = []
         
-        sampled_states, sampled_actions, sampled_rewards, sampled_lengths = replay_buffer.sample_trajectories(ntrajs)
+        size_off_policy_data = len(off_policy_data)
+        ind = np.random.randint(0, size_off_policy_data-self.number_obs_off_per_traj-1, size=ntrajs)
+        
+        sampled_states = []
+        sampled_actions = []
+        sampled_rewards = []
+        
+        for i in range(ntrajs):
+            states_temp = torch.FloatTensor(off_policy_data[ind[i]:int(ind[i]+self.number_obs_off_per_traj)]).to(device)
+            next_states_temp = torch.FloatTensor(off_policy_data[int(ind[i]+1):int(ind[i]+self.number_obs_off_per_traj+1)]).to(device)
+            actions_temp = self.actor.sample_inverse_model(states_temp, next_states_temp)
+            rewards_temp = self.actor.forward_inv_reward(states_temp, next_states_temp)
+            rewards_i = self.intrinsic_reward*torch.ones_like(rewards_temp)    
+            rewards_tot = rewards_temp+rewards_i
+        
+            sampled_states.append(states_temp)
+            sampled_actions.append(actions_temp)
+            sampled_rewards.append(rewards_tot)
         
         for l in range(ntrajs):
-            traj_size = sampled_lengths[l]
+            traj_size = self.number_obs_off_per_traj
             gammas = []
             lambdas = []
             for t in range(traj_size):
@@ -216,24 +231,20 @@ class on_off_AWAC_Q_lambda_haru:
                 episode_gammas = gammas_list[l]
                 episode_lambdas = lambdas_list[l]
                 
-                traj_size = sampled_lengths[l] 
+                traj_size = self.number_obs_off_per_traj
                 
                 self.actor.eval()
                 
-                Q1, Q2 = self.actor.critic_target(episode_states)
-                Q1_off = Q1.gather(1, episode_actions.long()) 
-                Q2_off = Q2.gather(1, episode_actions.long()) 
-                values_off = torch.min(Q1_off, Q2_off)
-                
                 pi_action, log_pi = self.actor.sample(episode_states)
+                Q1_on, Q2_on = self.actor.critic_target(episode_states)
                 
                 if self.Entropy:
-                    current_Q1 = Q1.gather(1, pi_action.long().unsqueeze(-1)) 
-                    current_Q2 = Q2.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q1 = Q1_on.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q2 = Q2_on.gather(1, pi_action.long().unsqueeze(-1)) 
                     values = torch.min(current_Q1, current_Q2) - self.alpha*log_pi
                 else:
-                    current_Q1 = Q1.gather(1, pi_action.long().unsqueeze(-1)) 
-                    current_Q2 = Q2.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q1 = Q1_on.gather(1, pi_action.long().unsqueeze(-1)) 
+                    current_Q2 = Q2_on.gather(1, pi_action.long().unsqueeze(-1)) 
                     values = torch.min(current_Q1, current_Q2)
                     
                 final_bootstrap = values[-1].unsqueeze(-1)
@@ -244,10 +255,10 @@ class on_off_AWAC_Q_lambda_haru:
                 episode_Q = []
                 
                 for j in range(traj_size):
-                    off_policy_adjust = values_off[j:] 
+                    off_policy_adjust = torch.cat((torch.FloatTensor([[0.]]).to(device), values[j+1:]))     
                     episode_deltas = next_action_values[j:] - off_policy_adjust
-                    episode_Q.append(values_off[j] + ((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum())
-                    episode_adv.append(values_off[j] + ((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum() - values[j])
+                    episode_Q.append(((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum())
+                    episode_adv.append(((episode_gammas*episode_lambdas)[:traj_size-j].unsqueeze(-1)*episode_deltas).sum() - values[j])
                 
                 episode_advantage = torch.FloatTensor(episode_adv).to(device)
                 episode_target_Q = torch.FloatTensor(episode_Q).to(device)
@@ -259,6 +270,58 @@ class on_off_AWAC_Q_lambda_haru:
                 
         return states, actions, target_Q, advantage
     
+    def train_inverse_models(self, off_policy_data):
+        states_on = torch.FloatTensor(np.array(self.states)).to(device)
+        
+        if self.action_space == "Discrete":
+            actions_on = torch.LongTensor(np.array(self.actions)).to(device)
+        elif self.action_space == "Continuous":
+            actions_on = torch.FloatTensor(np.array(self.actions)).to(device)
+        
+        reward_on = torch.cat(self.reward)
+        
+        size_off_policy_data = len(off_policy_data)
+        
+        max_steps = self.num_epochs * (self.num_steps_per_rollout_on // self.minibatch_size)
+        
+        for _ in range(max_steps):
+            
+            minibatch_indices_ims = np.random.choice(range(self.num_steps_per_rollout_on-1), self.minibatch_size, False)
+            states_ims = states_on[minibatch_indices_ims]
+            next_states_ims = states_on[minibatch_indices_ims+1]
+            rewards_ims = reward_on[minibatch_indices_ims]
+            actions_ims = actions_on[minibatch_indices_ims]
+            
+            inverse_action_model_prob = self.actor.forward_inv_a(states_ims, next_states_ims)
+            m = F.one_hot(actions_ims.squeeze().cpu(), self.action_space_cardinality).float().to(device)
+            L_ia = F.mse_loss(inverse_action_model_prob, m)
+            
+            # L_ia = F.mse_loss(self.actor.sample_inverse_model(states_ims, next_states_ims), actions_ims.squeeze().float())
+            
+            L_ir = F.mse_loss(rewards_ims.unsqueeze(-1), self.actor.forward_inv_reward(states_ims, next_states_ims))
+            
+            minibatch_indices_obs = np.random.choice(range(size_off_policy_data), self.minibatch_size, False)
+            state_obs = torch.FloatTensor(off_policy_data[minibatch_indices_obs]).to(device)
+            
+            obs_class = torch.zeros(self.minibatch_size, device=device)
+            rollout_class = torch.ones(self.minibatch_size, device=device)
+            criterion = torch.nn.BCELoss()
+            
+            d_loss_rollout = criterion(self.discriminator(self.actor.encode_image(states_ims).detach()).squeeze(), rollout_class) 
+            d_loss_obs = criterion(self.discriminator(self.actor.encode_image(state_obs).detach()).squeeze(), obs_class) 
+            d_loss = 0.5*(d_loss_rollout + d_loss_obs)
+            
+            self.discriminator_optimizer.zero_grad()
+            d_loss.backward()
+            self.discriminator_optimizer.step()
+            
+            encode_loss = criterion(self.discriminator(self.actor.encode_image(state_obs)).squeeze(), rollout_class) 
+              
+            self.actor_optimizer.zero_grad()
+            loss = L_ia + L_ir + encode_loss
+            loss.backward()
+            self.actor_optimizer.step()
+    
     def train(self, states_off, actions_off, target_Q_off, advantage_off):
         self.total_it += 1
         
@@ -268,6 +331,8 @@ class on_off_AWAC_Q_lambda_haru:
             actions_on = torch.LongTensor(np.array(self.actions)).to(device)
         elif self.action_space == "Continuous":
             actions_on = torch.FloatTensor(np.array(self.actions)).to(device)
+        
+        reward_on = torch.cat(self.reward)
         
         target_Q_on = torch.cat(self.target_Q)
         advantage_on = torch.cat(self.advantage).to(device)
@@ -287,13 +352,14 @@ class on_off_AWAC_Q_lambda_haru:
         rollout_advantage = (rollout_advantage-rollout_advantage.mean())/(rollout_advantage.std()+1e-6)
         
         self.actor.train()
+        obs_off_size = len(advantage_off)
         self.num_steps_per_rollout = len(rollout_advantage)
         max_steps = self.num_epochs * (self.num_steps_per_rollout // self.minibatch_size)
         
         for _ in range(max_steps):
             
             minibatch_indices = np.random.choice(range(self.num_steps_per_rollout), self.minibatch_size, False)
-            batch_states=rollout_states[minibatch_indices]
+            batch_states = rollout_states[minibatch_indices]
             batch_actions = rollout_actions[minibatch_indices]
             batch_target_Q = rollout_target_Q[minibatch_indices]
             batch_advantage = rollout_advantage[minibatch_indices]
@@ -319,13 +385,42 @@ class on_off_AWAC_Q_lambda_haru:
             
             critic_loss = F.mse_loss(current_Q1.squeeze(), batch_target_Q) + F.mse_loss(current_Q1.squeeze(), batch_target_Q)
                 
+            minibatch_indices_ims = np.random.choice(range(self.num_steps_per_rollout_on-1), self.minibatch_size, False)
+            states_ims = states_on[minibatch_indices_ims]
+            next_states_ims = states_on[minibatch_indices_ims+1]
+            rewards_ims = reward_on[minibatch_indices_ims]
+            actions_ims = actions_on[minibatch_indices_ims]
+            
+            inverse_action_model_prob = self.actor.forward_inv_a(states_ims, next_states_ims)
+            m = F.one_hot(actions_ims.squeeze().cpu(), self.action_space_cardinality).float().to(device)
+            L_ia = F.mse_loss(inverse_action_model_prob, m)
+            
+            L_ir = F.mse_loss(rewards_ims.unsqueeze(-1), self.actor.forward_inv_reward(states_ims, next_states_ims))
+            
+            minibatch_indices_obs = np.random.choice(range(obs_off_size), self.minibatch_size, False)
+            state_obs = states_off[minibatch_indices_obs]
+            
+            obs_class = torch.zeros(self.minibatch_size, device=device)
+            rollout_class = torch.ones(self.minibatch_size, device=device)
+            criterion = torch.nn.BCELoss()
+            
+            d_loss_rollout = criterion(self.discriminator(self.actor.encode_image(states_ims).detach()).squeeze(), rollout_class) 
+            d_loss_obs = criterion(self.discriminator(self.actor.encode_image(state_obs).detach()).squeeze(), obs_class) 
+            d_loss = 0.5*(d_loss_rollout + d_loss_obs)
+            
+            self.discriminator_optimizer.zero_grad()
+            d_loss.backward()
+            self.discriminator_optimizer.step()
+            
+            encode_loss = criterion(self.discriminator(self.actor.encode_image(state_obs)).squeeze(), rollout_class) 
+            
             self.actor_optimizer.zero_grad()
             
             if self.Entropy:
                 _, log_pi_state = self.actor.sample(batch_states)
-                loss = (-1) * (L_clip - self.alpha*log_pi_state).mean() + critic_loss
+                loss = (-1) * (L_clip - self.alpha*log_pi_state).mean() + critic_loss + L_ia + L_ir + encode_loss
             else:
-                loss = (-1) * (L_clip).mean() + critic_loss
+                loss = (-1) * (L_clip).mean() + critic_loss + L_ia + L_ir + encode_loss
             
             loss.backward()
             self.actor_optimizer.step()
@@ -365,6 +460,8 @@ class on_off_AWAC_Q_lambda_haru:
     def load_critic(self, filename):
         self.value_function.load_state_dict(torch.load(filename + "_value_function"))      
         self.value_function_optimizer.load_state_dict(torch.load(filename + "_value_function_optimizer")) 
+        
+
         
 
         

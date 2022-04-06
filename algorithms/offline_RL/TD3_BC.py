@@ -34,10 +34,6 @@ class TD3_BC(object):
             self.actor_target = copy.deepcopy(self.actor)
             self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=l_rate_actor)
             self.action_space = "Discrete"
-                    
-            # self.critic = Critic_flat_discrete(state_dim, action_space_cardinality).to(device)
-            # self.critic_target = copy.deepcopy(self.critic)
-            # self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=l_rate_critic)
 
         self.state_dim = state_dim
         self.action_dim = action_dim

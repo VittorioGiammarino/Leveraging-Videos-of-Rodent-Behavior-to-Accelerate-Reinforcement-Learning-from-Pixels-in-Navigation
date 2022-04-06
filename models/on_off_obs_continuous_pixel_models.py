@@ -11,8 +11,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
 
-from models.ResNet import ResNet18 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Function from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/model.py

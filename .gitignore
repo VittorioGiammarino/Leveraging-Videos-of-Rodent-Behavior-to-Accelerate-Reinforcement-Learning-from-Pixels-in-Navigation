@@ -5,3 +5,5 @@ Saved_models/**
 log_files/**
 results/**
 results_partial/**
+multiworld/**
+rl_with_videos/**
