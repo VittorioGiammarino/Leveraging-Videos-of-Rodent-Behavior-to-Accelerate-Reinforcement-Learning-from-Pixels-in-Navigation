@@ -15,15 +15,16 @@ from models.sample_models import TanhGaussianHierarchicalActor
 from models.sample_models import Value_net
 
 from models.on_off_obs_minigrid_models import SoftmaxActor
-from models.on_off_obs_minigrid_models import Discriminator
+from models.on_off_obs_minigrid_models import Discriminator_GAN, Discriminator_WGAN
 from models.on_off_obs_minigrid_models import Encoder
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class on_off_AWAC_GAE_obs:
-    def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, Entropy = True,   
-                 num_steps_per_rollout=2000, number_obs_off_per_traj=100, l_rate_actor=3e-4, l_rate_alpha=3e-4, discount=0.99, tau=0.005, beta=3, 
-                 gae_gamma = 0.99, gae_lambda = 0.99, minibatch_size=64, num_epochs=10, alpha=0.2, l_rate_discr = 1e-4, intrinsic_reward = 0.01):
+    def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, Domain_adaptation = True, Entropy = True,   
+                 num_steps_per_rollout=2000, intrinsic_reward = 0.01, number_obs_off_per_traj=100, l_rate_actor=3e-4, l_rate_alpha=3e-4, 
+                 discount=0.99, tau=0.005, beta=3, gae_gamma = 0.99, gae_lambda = 0.99, minibatch_size=64, num_epochs=10, alpha=0.2, 
+                 adversarial_loss = "wgan"):
         
         if np.isinf(action_space_cardinality):
             self.actor = TanhGaussianHierarchicalActor.NN_PI_LO(state_dim, action_dim, max_action).to(device)
@@ -31,17 +32,32 @@ class on_off_AWAC_GAE_obs:
             self.action_space = "Continuous"
             
         else:
+            self.action_space = "Discrete"
             self.actor = SoftmaxActor(state_dim, action_space_cardinality).to(device)
             self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=l_rate_actor)
-            self.encoder_off = Encoder(state_dim, action_space_cardinality).to(device)
-            self.encoder_off_optimizer = torch.optim.Adam(self.encoder_off.parameters(), lr=l_rate_actor)
-            self.encoder_on = copy.deepcopy(self.encoder_off)
-            self.encoder_on_optimizer = torch.optim.Adam(self.encoder_on.parameters(), lr=1e-3)
-            self.action_space = "Discrete"
-            self.discriminator = Discriminator().to(device)
-            self.discriminator_optimizer = torch.optim.Adam(self.discriminator.parameters(), lr=l_rate_discr)
             
-      
+            # enconder on-policy data
+            self.encoder_on = Encoder(state_dim, action_space_cardinality).to(device)
+            
+            if adversarial_loss == "gan":
+                #encoder off-policy data
+                self.encoder_off = copy.deepcopy(self.encoder_on)
+                self.encoder_off_optimizer = torch.optim.Adam(self.encoder_off.parameters(), lr=2e-4, betas=(0.5, 0.999))
+                
+                # discriminator for domain adaptation
+                self.discriminator = Discriminator_GAN().to(device)
+                self.discriminator_optimizer = torch.optim.Adam(self.discriminator.parameters(), lr=2e-4, betas=(0.5, 0.999))
+                
+            elif adversarial_loss == "wgan":
+                #encoder off-policy data
+                self.encoder_off = copy.deepcopy(self.encoder_on)
+                self.encoder_off_optimizer = torch.optim.RMSprop(self.encoder_off.parameters(), lr=5e-5)
+                
+                # discriminator for domain adaptation
+                self.discriminator = Discriminator_WGAN().to(device)
+                self.discriminator_optimizer = torch.optim.RMSprop(self.discriminator.parameters(), lr=5e-5)
+                
+    
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.action_space_cardinality = action_space_cardinality
@@ -74,6 +90,9 @@ class on_off_AWAC_GAE_obs:
         
         self.number_obs_off_per_traj = int(number_obs_off_per_traj)
         self.intrinsic_reward = intrinsic_reward
+        
+        self.Domain_adaptation = Domain_adaptation
+        self.adversarial_loss = adversarial_loss
         
     def reset_counters(self):
         self.Total_t = 0
@@ -242,7 +261,7 @@ class on_off_AWAC_GAE_obs:
             
         return states, actions, returns, advantage
     
-    def train_inverse_models(self, off_policy_data):
+    def train_inverse_models(self):
         states_on = torch.FloatTensor(np.array(self.states)).to(device)
         
         if self.action_space == "Discrete":
@@ -269,8 +288,6 @@ class on_off_AWAC_GAE_obs:
             m = F.one_hot(actions_ims.squeeze().cpu(), self.action_space_cardinality).float().to(device)
             L_ia = F.mse_loss(inverse_action_model_prob, m)
             
-            # L_ia = F.mse_loss(self.actor.sample_inverse_model(states_ims, next_states_ims), actions_ims.squeeze().float())
-            
             L_ir = F.mse_loss(rewards_ims.unsqueeze(-1), self.actor.forward_inv_reward(embedding, embedding_next))
               
             self.actor_optimizer.zero_grad()
@@ -292,13 +309,11 @@ class on_off_AWAC_GAE_obs:
         
         states_off = torch.cat(states_off)
         
-        # # rollout_states = torch.cat((states_on, states_off))
-        
-        # with torch.no_grad():
-        #     embedding_on = self.encoder_on(states_on)
-        #     embedding_off = self.encoder_off(states_off)
-        #     rollout_embedding =  torch.cat((embedding_on, embedding_off))
-        
+        with torch.no_grad():
+            embedding_on = self.encoder_on(states_on)
+            embedding_off = self.encoder_off(states_off)
+            rollout_embedding = torch.cat((embedding_on, embedding_off))
+            
         actions_off = torch.cat(actions_off)
         rollout_actions = torch.cat((actions_on, actions_off.squeeze()))
         
@@ -311,30 +326,23 @@ class on_off_AWAC_GAE_obs:
         rollout_advantage = (rollout_advantage-rollout_advantage.mean())/(rollout_advantage.std()+1e-6)
         
         self.actor.train()
-        # self.encoder.train()
         
         obs_off_size = len(advantage_off)
         self.num_steps_per_rollout = len(rollout_advantage)
         max_steps = self.num_epochs * (self.num_steps_per_rollout // self.minibatch_size)
         
-        for _ in range(max_steps):
+        recap_d_loss = []
+        recap_encode_loss = []
+        recap_real_score = []
+        recap_fake_score = []
+        
+        for i in range(max_steps):
             
             minibatch_indices = np.random.choice(range(self.num_steps_per_rollout), self.minibatch_size, False)
-            # batch_states = rollout_states[minibatch_indices]
             batch_actions = rollout_actions[minibatch_indices]
             batch_returns = rollout_returns[minibatch_indices]
             batch_advantage = rollout_advantage[minibatch_indices]
-            
-            minibatch_indices_ims = np.random.choice(range(self.num_steps_per_rollout_on), int(self.minibatch_size/2), False)
-            states_ims = states_on[minibatch_indices_ims]
-            embedding_on = self.encoder_on(states_ims)
-            
-            minibatch_indices_obs = np.random.choice(range(obs_off_size), int(self.minibatch_size/2), False)
-            state_obs = states_off[minibatch_indices_obs]
-            embedding_off = self.encoder_off(state_obs)
-            
-            batch_embedding = torch.cat((embedding_on, embedding_off))
-            batch_embedding = batch_embedding[torch.randperm(batch_embedding.size()[0])]
+            batch_embedding = rollout_embedding[minibatch_indices]
                     
             if self.action_space == "Discrete":
                 log_prob, log_prob_rollout = self.actor.sample_log(batch_embedding, batch_actions)
@@ -347,26 +355,7 @@ class on_off_AWAC_GAE_obs:
             L_clip = r*weights
             L_vf = (self.actor.value_net(batch_embedding).squeeze() - batch_returns)**2
             
-            minibatch_indices_ims = np.random.choice(range(self.num_steps_per_rollout_on), self.minibatch_size, False)
-            states_ims = states_on[minibatch_indices_ims]
-            
-            minibatch_indices_obs = np.random.choice(range(obs_off_size), self.minibatch_size, False)
-            state_obs = states_off[minibatch_indices_obs]
-            
-            obs_class = torch.zeros(self.minibatch_size, device=device)
-            rollout_class = torch.ones(self.minibatch_size, device=device)
-            criterion = torch.nn.BCELoss()
-            
-            d_loss_rollout = criterion(self.discriminator(self.encoder_on(states_ims).detach()).squeeze(), rollout_class) 
-            d_loss_obs = criterion(self.discriminator(self.encoder_off(state_obs).detach()).squeeze(), obs_class) 
-            d_loss = 0.5*(d_loss_rollout + d_loss_obs)
-            
-            self.discriminator_optimizer.zero_grad()
-            d_loss.backward()
-            self.discriminator_optimizer.step()
-            
             self.actor_optimizer.zero_grad()
-            # self.encoder_on_optimizer.zero_grad()
             if self.Entropy:
                 _, log_pi_state = self.actor.sample(batch_embedding)
                 loss = (-1) * (L_clip - L_vf - self.alpha*log_pi_state).mean()
@@ -375,13 +364,93 @@ class on_off_AWAC_GAE_obs:
             
             loss.backward()
             self.actor_optimizer.step()
-            # self.encoder_on_optimizer.step()
             
-            encode_loss = criterion(self.discriminator(self.encoder_off(state_obs)).squeeze(), rollout_class)
-            self.encoder_off_optimizer.zero_grad()
-            encode_loss.backward()
-            self.encoder_off_optimizer.step()
-            
+            if self.Domain_adaptation:
+                
+                minibatch_indices_ims = np.random.choice(range(self.num_steps_per_rollout_on), self.minibatch_size, False)
+                states_ims = states_on[minibatch_indices_ims]
+                
+                minibatch_indices_obs = np.random.choice(range(obs_off_size), self.minibatch_size, False)
+                state_obs = states_off[minibatch_indices_obs]
+                
+                if self.adversarial_loss == 'gan':
+                    
+                    obs_class = torch.zeros(self.minibatch_size, device=device)
+                    rollout_class = torch.ones(self.minibatch_size, device=device)
+                    criterion = torch.nn.BCELoss()
+                    
+                    # -----------------
+                    #  Train Encoder off
+                    # -----------------
+                    
+                    self.encoder_off_optimizer.zero_grad()
+                    
+                    embedding_off = self.encoder_off(state_obs)
+                    encode_loss = criterion(self.discriminator(embedding_off).squeeze(), rollout_class)
+    
+                    encode_loss.backward()
+                    self.encoder_off_optimizer.step()
+                    
+                    # ---------------------
+                    #  Train Discriminator
+                    # ---------------------
+                    
+                    self.discriminator_optimizer.zero_grad()
+                    
+                    real_embedding = self.encoder_on(states_ims).detach()
+                    d_loss_rollout = criterion(self.discriminator(real_embedding).squeeze(), rollout_class) 
+                    d_loss_obs = criterion(self.discriminator(embedding_off.detach()).squeeze(), obs_class) 
+                    d_loss = 0.5*(d_loss_rollout + d_loss_obs)
+                    
+                    d_loss.backward()
+                    self.discriminator_optimizer.step()
+                    
+                elif self.adversarial_loss == 'wgan':
+                    
+                    clip_value = 0.01
+                    n_critic = 5
+                    
+                    # ---------------------
+                    #  Train Discriminator
+                    # ---------------------
+                    
+                    self.discriminator_optimizer.zero_grad()
+                    
+                    embedding_off = self.encoder_off(state_obs).detach().squeeze()
+                    real_embedding = self.encoder_on(states_ims).detach().squeeze()
+                    
+                    d_loss = -torch.mean(self.discriminator(real_embedding)) + torch.mean(self.discriminator(embedding_off))
+                    
+                    d_loss.backward()
+                    self.discriminator_optimizer.step()
+                    
+                    # Clip weights of discriminator
+                    for p in self.discriminator.parameters():
+                        p.data.clamp_(-clip_value, clip_value)
+                        
+                    # Train the encoder off every n_critic iterations
+                    if i % n_critic == 0:
+                        
+                        # -----------------
+                        #  Train Encoder off
+                        # -----------------
+                        
+                        self.encoder_off_optimizer.zero_grad()
+                        
+                        embedding_off = self.encoder_off(state_obs).squeeze()
+                        encode_loss = -torch.mean(self.discriminator(embedding_off))
+        
+                        encode_loss.backward()
+                        self.encoder_off_optimizer.step()
+                        
+                else:
+                    NotImplemented
+                    
+                recap_d_loss.append(d_loss.detach().cpu().numpy())
+                recap_encode_loss.append(encode_loss.detach().cpu().numpy())
+                recap_real_score.append((self.discriminator(self.encoder_on(states_ims).detach())).mean().detach().cpu().numpy())
+                recap_fake_score.append((self.discriminator(self.encoder_off(state_obs).detach())).mean().detach().cpu().numpy())
+                    
             if self.Entropy: 
 
                 alpha_loss = -(self.log_alpha * (log_pi_state + self.target_entropy).detach()).mean()
@@ -392,8 +461,15 @@ class on_off_AWAC_GAE_obs:
         
                 self.alpha = self.log_alpha.exp()
                 
-        print(f"d_loss: {d_loss}, encode_loss: {encode_loss}")
-                
+        if self.Domain_adaptation:
+        
+            mean_d = np.mean(np.array(recap_d_loss))
+            mean_encode = np.mean(np.array(recap_encode_loss))
+            real_score = np.mean(np.array(recap_real_score))
+            fake_score = np.mean(np.array(recap_fake_score))
+            
+            print(f"d_loss: {mean_d}, encode_loss: {mean_encode}")
+            print(f"class real score: {real_score}, class fake score: {fake_score}")
                 
     def save_actor(self, filename):
         option = 0

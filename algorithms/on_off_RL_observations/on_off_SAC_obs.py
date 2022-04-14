@@ -15,14 +15,15 @@ from models.sample_models import TanhGaussianHierarchicalActor
 from models.sample_models import Critic_flat
 
 from models.on_off_obs_minigrid_models import SoftmaxActor
-from models.on_off_obs_minigrid_models import Discriminator
+from models.on_off_obs_minigrid_models import Discriminator_GAN, Discriminator_WGAN
+from models.on_off_obs_minigrid_models import Encoder
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class on_off_SAC_obs:
-    def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, Prioritized = False,
-                 l_rate_actor=1e-4, l_rate_critic=3e-4, l_rate_alpha=1e-4, discount=0.99, tau=0.005, 
-                 alpha=0.01, critic_freq=2, l_rate_discr = 3e-8, intrinsic_reward = 0.001): 
+    def __init__(self, state_dim, action_dim, action_space_cardinality, max_action, min_action, Domain_adaptation = True, intrinsic_reward = 0.01,
+                 Prioritized = False, l_rate_actor=1e-4, l_rate_critic=3e-4, l_rate_alpha=1e-4, discount=0.99, tau=0.005, 
+                 alpha=0.01, critic_freq=2, adversarial_loss = "wgan"): 
         
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -38,11 +39,30 @@ class on_off_SAC_obs:
             self.critic_target = copy.deepcopy(self.critic)
             self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=l_rate_critic)
         else:
+            self.action_space = "Discrete"
             self.actor = SoftmaxActor(state_dim, action_space_cardinality).to(device)
             self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=l_rate_actor)
-            self.action_space = "Discrete"
-            self.discriminator = Discriminator().to(device)
-            self.discriminator_optimizer = torch.optim.Adam(self.discriminator.parameters(), lr=l_rate_discr)
+            
+            # enconder on-policy data
+            self.encoder_on = Encoder(state_dim, action_space_cardinality).to(device)
+            
+            if adversarial_loss == "gan":
+                #encoder off-policy data
+                self.encoder_off = copy.deepcopy(self.encoder_on)
+                self.encoder_off_optimizer = torch.optim.Adam(self.encoder_off.parameters(), lr=2e-4, betas=(0.5, 0.999))
+                
+                # discriminator for domain adaptation
+                self.discriminator = Discriminator_GAN().to(device)
+                self.discriminator_optimizer = torch.optim.Adam(self.discriminator.parameters(), lr=2e-4, betas=(0.5, 0.999))
+                
+            elif adversarial_loss == "wgan":
+                #encoder off-policy data
+                self.encoder_off = copy.deepcopy(self.encoder_on)
+                self.encoder_off_optimizer = torch.optim.RMSprop(self.encoder_off.parameters(), lr=5e-5)
+                
+                # discriminator for domain adaptation
+                self.discriminator = Discriminator_WGAN().to(device)
+                self.discriminator_optimizer = torch.optim.RMSprop(self.discriminator.parameters(), lr=5e-5)
                     
         self.target_entropy = -torch.FloatTensor([action_dim]).to(device)
         self.log_alpha = torch.zeros(1, requires_grad=True, device = 'cuda')
@@ -57,19 +77,45 @@ class on_off_SAC_obs:
 
         self.total_it = 0
         
-        self.intrinsic_reward = 0.001
+        self.intrinsic_reward = intrinsic_reward
+        
+        self.Domain_adaptation = Domain_adaptation
+        self.adversarial_loss = adversarial_loss
         
     def select_action(self, state):
         with torch.no_grad():
             if self.action_space == "Discrete":
                 state = torch.FloatTensor(state.transpose(2,0,1)).unsqueeze(0).to(device)
-                action, _ = self.actor.sample(state)
+                embedding = self.encoder_on(state)
+                action, _ = self.actor.sample(embedding)
                 return int((action).cpu().data.numpy().flatten())
             
             if self.action_space == "Continuous":
                 state = torch.FloatTensor(state.reshape(1, -1)).to(device)
                 action, _, _ = self.actor.sample_SAC_continuous(state)
                 return (action).cpu().data.numpy().flatten()
+            
+    def train_inverse_models(self, replay_buffer_online, batch_size=256):
+        # Sample replay buffer 
+        if self.Prioritized:
+            batch, weights, tree_idxs = replay_buffer_online.sample(batch_size)  
+            state_on, action_on, next_state_on, reward_on, cost_on, not_done_on = batch
+        else:
+            state_on, action_on, next_state_on, reward_on, cost_on, not_done_on = replay_buffer_online.sample(batch_size)
+            
+        embedding = self.encoder_on(state_on)
+        embedding_next = self.encoder_on(next_state_on)
+            
+        inverse_action_model_prob = self.actor.forward_inv_a(embedding, embedding_next)
+        m = F.one_hot(action_on.squeeze().cpu(), self.action_space_cardinality).float().to(device)
+        L_ia = F.mse_loss(inverse_action_model_prob, m)
+        
+        L_ir = F.mse_loss(reward_on, self.actor.forward_inv_reward(embedding, embedding_next))
+        
+        self.actor_optimizer.zero_grad()
+        loss = L_ia + L_ir 
+        loss.backward()
+        self.actor_optimizer.step()
             
     def train(self, replay_buffer_online, off_policy_data, batch_size=128):
         self.total_it += 1
@@ -86,14 +132,22 @@ class on_off_SAC_obs:
         
         state_off = torch.FloatTensor(np.array([off_policy_data[ind]]).squeeze(0)).to(device)
         next_state_off = torch.FloatTensor(np.array([off_policy_data[ind+1]]).squeeze(0)).to(device)
-        action_off = self.actor.sample_inverse_model(state_off, next_state_off).unsqueeze(1)
-        reward_off_inv = self.actor.forward_inv_reward(state_off, next_state_off)
-        reward_i = self.intrinsic_reward*torch.ones_like(reward_off_inv)  
-        reward_off = (reward_off_inv + reward_i).to(device)
         
-        state = torch.cat([state_on, state_off])
+        with torch.no_grad():
+            embedding_off = self.encoder_off(state_off)
+            next_embedding_off = self.encoder_off(next_state_off)    
+            
+            action_off = self.actor.sample_inverse_model(embedding_off, next_embedding_off).unsqueeze(1)
+            reward_off_inv = self.actor.forward_inv_reward(embedding_off, next_embedding_off)
+            reward_i = self.intrinsic_reward*torch.ones_like(reward_off_inv)  
+            reward_off = (reward_off_inv + reward_i).to(device)
+            
+            embedding_on = self.encoder_on(state_on)
+            next_embedding_on = self.encoder_on(next_state_on)
+        
+        embedding = torch.cat([embedding_on, embedding_off])
         action = torch.cat([action_on, action_off])
-        next_state = torch.cat([next_state_on, next_state_off])
+        next_embedding = torch.cat([next_embedding_on, next_embedding_off])
         reward = torch.cat([reward_on, reward_off])
         cost = torch.cat([cost_on, torch.zeros_like(cost_on, device=device)])
         not_done = torch.cat([not_done_on, torch.ones_like(not_done_on, device=device)])
@@ -103,29 +157,29 @@ class on_off_SAC_obs:
 			
             if self.action_space == "Discrete":
                 # Compute the target Q value
-                next_action, log_pi_next_state = self.actor.sample(next_state)
-                target_Q1, target_Q2 = self.actor.critic_target(next_state)
+                next_action, log_pi_next_state = self.actor.sample(next_embedding)
+                target_Q1, target_Q2 = self.actor.critic_target(next_embedding)
                 current_target_Q1 = target_Q1.gather(1, next_action.detach().long().unsqueeze(-1)) 
                 current_target_Q2 = target_Q2.gather(1, next_action.detach().long().unsqueeze(-1)) 
                 target_Q = (torch.min(current_target_Q1, current_target_Q2) - self.alpha*log_pi_next_state)
                 target_Q = reward-cost + not_done * self.discount * target_Q.sum(dim=1).unsqueeze(-1)
                 
             elif self.action_space == "Continuous":
-                next_action, log_pi_next_state, _ = self.actor.sample_SAC_continuous(next_state)
+                next_action, log_pi_next_state, _ = self.actor.sample_SAC_continuous(next_embedding)
                     
                 # Compute the target Q value
-                target_Q1, target_Q2 = self.critic_target(next_state, next_action)
+                target_Q1, target_Q2 = self.critic_target(next_embedding, next_action)
                 target_Q = torch.min(target_Q1, target_Q2) - self.alpha*log_pi_next_state
                 target_Q = reward-cost + not_done * self.discount * target_Q
 
         if self.action_space == "Discrete":
-            Q1, Q2 = self.actor.critic_net(state)
+            Q1, Q2 = self.actor.critic_net(embedding)
             current_Q1 = Q1.gather(1, action.detach().long()) 
             current_Q2 = Q2.gather(1, action.detach().long()) 
         
         elif self.action_space == "Continuous":
             #current Q estimates
-            current_Q1, current_Q2 = self.critic(state, action)
+            current_Q1, current_Q2 = self.critic(embedding, action)
 
         if self.Prioritized:
             td_error_Q1 = torch.abs(current_Q1 - target_Q)
@@ -145,8 +199,8 @@ class on_off_SAC_obs:
             self.Buffer.update_priorities(tree_idxs, td_error.detach())
 
         if self.action_space == "Discrete":
-            Q1, Q2 = self.actor.critic_net(state)
-            pi_action, log_pi_state = self.actor.sample(state)
+            Q1, Q2 = self.actor.critic_net(embedding)
+            pi_action, log_pi_state = self.actor.sample(embedding)
             actor_Q1 = Q1.gather(1, pi_action.detach().long().unsqueeze(-1)) 
             actor_Q2 = Q2.gather(1, pi_action.detach().long().unsqueeze(-1)) 
             minQ = torch.min(actor_Q1, actor_Q2)
@@ -154,38 +208,89 @@ class on_off_SAC_obs:
             actor_loss = (self.alpha*log_pi_state-minQ).mean()
             
         elif self.action_space == "Continuous":
-            action, log_pi_state, _ = self.actor.sample_SAC_continuous(state)
-            Q1, Q2 = self.critic(state, action)
+            pi_action, log_pi_state, _ = self.actor.sample_SAC_continuous(embedding)
+            Q1, Q2 = self.critic(embedding, pi_action)
             minQ = torch.min(Q1,Q2)
 
             actor_loss = ((self.alpha*log_pi_state)-minQ).mean()
             
-        inverse_action_model_prob = self.actor.forward_inv_a(state_on, next_state_on)
-        m = F.one_hot(action_on.squeeze().cpu(), self.action_space_cardinality).float().to(device)
-        L_ia = F.mse_loss(inverse_action_model_prob, m)
-        
-        L_ir = F.mse_loss(reward_on, self.actor.forward_inv_reward(state_on, next_state_on))
-                
-        state_off_class = torch.zeros(batch_size, device=device)
-        state_on_class = torch.ones(batch_size, device=device)
-        criterion = torch.nn.BCELoss()
-        
-        d_loss_rollout = criterion(self.discriminator(self.actor.encode_image(state_on).detach()).squeeze(), state_on_class) 
-        d_loss_obs = criterion(self.discriminator(self.actor.encode_image(state_off).detach()).squeeze(), state_off_class) 
-        d_loss = 0.5*(d_loss_rollout + d_loss_obs)
-        
-        self.discriminator_optimizer.zero_grad()
-        d_loss.backward()
-        self.discriminator_optimizer.step()
-        
-        encode_loss = criterion(self.discriminator(self.actor.encode_image(state_off)).squeeze(), state_on_class)   
-			
         # Optimize the actor 
         self.actor_optimizer.zero_grad()
-        loss = actor_loss + L_ia + L_ir + encode_loss
-        loss.backward()
+        actor_loss.backward()
         self.actor_optimizer.step()
-                   
+        
+        if self.Domain_adaptation:
+            
+            if self.adversarial_loss == 'gan':
+                
+                obs_class = torch.zeros(batch_size, device=device)
+                rollout_class = torch.ones(batch_size, device=device)
+                criterion = torch.nn.BCELoss()
+                
+                # -----------------
+                #  Train Encoder off
+                # -----------------
+                
+                self.encoder_off_optimizer.zero_grad()
+                
+                embedding_off = self.encoder_off(state_off)
+                encode_loss = criterion(self.discriminator(embedding_off).squeeze(), rollout_class)
+
+                encode_loss.backward()
+                self.encoder_off_optimizer.step()
+                
+                # ---------------------
+                #  Train Discriminator
+                # ---------------------
+                
+                self.discriminator_optimizer.zero_grad()
+                
+                real_embedding = self.encoder_on(state_on).detach()
+                d_loss_rollout = criterion(self.discriminator(real_embedding).squeeze(), rollout_class) 
+                d_loss_obs = criterion(self.discriminator(embedding_off.detach()).squeeze(), obs_class) 
+                d_loss = 0.5*(d_loss_rollout + d_loss_obs)
+                
+                d_loss.backward()
+                self.discriminator_optimizer.step()
+                
+            elif self.adversarial_loss == 'wgan':
+                
+                clip_value = 0.01
+                n_critic = 5
+                
+                # ---------------------
+                #  Train Discriminator
+                # ---------------------
+                
+                self.discriminator_optimizer.zero_grad()
+                
+                embedding_off = self.encoder_off(state_on).detach().squeeze()
+                real_embedding = self.encoder_on(state_off).detach().squeeze()
+                
+                d_loss = -torch.mean(self.discriminator(real_embedding)) + torch.mean(self.discriminator(embedding_off))
+                
+                d_loss.backward()
+                self.discriminator_optimizer.step()
+                
+                # Clip weights of discriminator
+                for p in self.discriminator.parameters():
+                    p.data.clamp_(-clip_value, clip_value)
+                    
+                # Train the encoder off every n_critic iterations
+                if self.total_it % n_critic == 0:
+                    
+                    # -----------------
+                    #  Train Encoder off
+                    # -----------------
+                    
+                    self.encoder_off_optimizer.zero_grad()
+                    
+                    embedding_off = self.encoder_off(state_off).squeeze()
+                    encode_loss = -torch.mean(self.discriminator(embedding_off))
+    
+                    encode_loss.backward()
+                    self.encoder_off_optimizer.step()        
+        
         alpha_loss = -(self.log_alpha * (log_pi_state + self.target_entropy).detach()).mean()
 
         self.alpha_optim.zero_grad()

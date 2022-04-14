@@ -138,24 +138,38 @@ class SoftmaxActor(nn.Module):
         
         return action    
     
-class Discriminator(nn.Module):
+class Discriminator_GAN(nn.Module):
     def __init__(self, embedding_size = 64):
-        super(Discriminator, self).__init__()
-
-        # architecture
-        self.discriminator = nn.Sequential(
-            nn.Linear(embedding_size, 256),
-            nn.Tanh(),
-            nn.Linear(256, 256),
-            nn.Tanh(),
-            nn.Linear(256, 1)
-            )
+        super(Discriminator_GAN, self).__init__()
         
-        # Initialize parameters correctly
-        self.apply(init_params)
+        self.discriminator = nn.Sequential(
+            nn.Linear(embedding_size, 512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(512, 256),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(256, 1),
+            nn.Sigmoid(),
+        )
+        
 
     def forward(self, embedding):
-        return torch.sigmoid(self.discriminator(embedding))
+        return self.discriminator(embedding)
+    
+class Discriminator_WGAN(nn.Module):
+    def __init__(self, embedding_size = 64):
+        super(Discriminator_WGAN, self).__init__()
+        
+        self.discriminator = nn.Sequential(
+            nn.Linear(embedding_size, 512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(512, 256),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(256, 1)
+        )
+        
+
+    def forward(self, embedding):
+        return self.discriminator(embedding)
     
 class Encoder(nn.Module):
     def __init__(self, state_dim, action_dim, use_bn=True):

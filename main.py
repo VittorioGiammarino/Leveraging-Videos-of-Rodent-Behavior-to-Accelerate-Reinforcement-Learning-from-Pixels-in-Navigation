@@ -340,6 +340,12 @@ def RL(env, args, seed):
         if args.data_set == 'rodent':
             with open('data_set/rodent_data_processed.npy', 'rb') as f:
                 off_policy_observations = np.load(f, allow_pickle=True)
+                
+        elif args.data_set == 'modified_human_expert':
+            a_file = open(f"offline_data_set/data_set_modified_{args.env}_human_expert.pkl", "rb")
+            data_set = pickle.load(a_file)
+            off_policy_observations = data_set['observations'].transpose(0,3,1,2)
+            
         elif args.data_set == 'human_expert':
             a_file = open(f"offline_data_set/data_set_{args.env}_{args.data_set}.pkl", "rb")
             data_set = pickle.load(a_file)
@@ -353,7 +359,9 @@ def RL(env, args, seed):
              "action_dim": action_dim,
              "action_space_cardinality": action_space_cardinality,
              "max_action": max_action,
-             "min_action": min_action
+             "min_action": min_action,
+             "Domain_adaptation": args.domain_adaptation,
+             "intrinsic_reward": args.intrinsic_reward
             }
     
             Agent_RL = on_off_SAC_obs(**kwargs)
@@ -370,7 +378,9 @@ def RL(env, args, seed):
              "action_space_cardinality": action_space_cardinality,
              "max_action": max_action,
              "min_action": min_action,
+             "Domain_adaptation": args.domain_adaptation,
              "Entropy": args.Entropy,
+             "intrinsic_reward": args.intrinsic_reward
             }
     
             Agent_RL = on_off_AWAC_obs(**kwargs)
@@ -387,8 +397,10 @@ def RL(env, args, seed):
              "action_space_cardinality": action_space_cardinality,
              "max_action": max_action,
              "min_action": min_action,
+             "Domain_adaptation": args.domain_adaptation,
              "Entropy": args.Entropy,
-             "num_steps_per_rollout": args.number_steps_per_iter
+             "num_steps_per_rollout": args.number_steps_per_iter,
+             "intrinsic_reward": args.intrinsic_reward
             }
     
             Agent_RL = on_off_AWAC_Q_lambda_Peng_obs(**kwargs)
@@ -405,8 +417,10 @@ def RL(env, args, seed):
              "action_space_cardinality": action_space_cardinality,
              "max_action": max_action,
              "min_action": min_action,
+             "Domain_adaptation": args.domain_adaptation,
              "Entropy": args.Entropy,
-             "num_steps_per_rollout": args.number_steps_per_iter
+             "num_steps_per_rollout": args.number_steps_per_iter,
+             "intrinsic_reward": args.intrinsic_reward
             }
     
             Agent_RL = on_off_AWAC_Q_lambda_Haru_obs(**kwargs)
@@ -423,8 +437,10 @@ def RL(env, args, seed):
              "action_space_cardinality": action_space_cardinality,
              "max_action": max_action,
              "min_action": min_action,
+             "Domain_adaptation": args.domain_adaptation,
              "Entropy": args.Entropy,
-             "num_steps_per_rollout": args.number_steps_per_iter
+             "num_steps_per_rollout": args.number_steps_per_iter,
+             "intrinsic_reward": args.intrinsic_reward
             }
     
             Agent_RL = on_off_AWAC_TB_obs(**kwargs)
@@ -441,8 +457,10 @@ def RL(env, args, seed):
              "action_space_cardinality": action_space_cardinality,
              "max_action": max_action,
              "min_action": min_action,
+             "Domain_adaptation": args.domain_adaptation,
              "Entropy": args.Entropy,
-             "num_steps_per_rollout": args.number_steps_per_iter
+             "num_steps_per_rollout": args.number_steps_per_iter,
+             "intrinsic_reward": args.intrinsic_reward
             }
     
             Agent_RL = on_off_AWAC_GAE_obs(**kwargs)
@@ -602,7 +620,7 @@ def RL(env, args, seed):
              "max_action": max_action,
              "min_action": min_action,
              "Entropy": args.Entropy,
-             "num_steps_per_rollout": args.number_steps_per_iter
+             "num_steps_per_rollout": args.number_steps_per_iter,
             }
     
             Agent_RL = GePPO(**kwargs)
@@ -675,6 +693,8 @@ if __name__ == "__main__":
     parser.add_argument("--ntrajs", default=10, type=int) #10
     parser.add_argument("--Entropy", action="store_true")
     parser.add_argument("--BC", action="store_true")
+    parser.add_argument("--domain_adaptation", action="store_true")
+    parser.add_argument("--intrinsic_reward", default=0.01, type=float)
     # Evaluation
     parser.add_argument("--evaluation_episodes", default=10, type=int) #10
     parser.add_argument("--evaluation_max_n_steps", default = 2000, type=int)
@@ -774,14 +794,14 @@ if __name__ == "__main__":
     if args.mode == "on_off_RL_from_observations":
         
         if args.policy == "SAC":
-            file_name = f"{args.mode}_{args.policy}_{args.env}_dataset_{args.data_set}_{args.seed}"
+            file_name = f"{args.mode}_{args.policy}_{args.env}_dataset_{args.data_set}_domain_adaptation_{args.domain_adaptation}_ri_{args.intrinsic_reward}_{args.seed}"
             print("---------------------------------------")
-            print(f"Mode: {args.mode}, Policy: {args.policy}, Env: {args.env}, Data: {args.data_set}, Seed: {args.seed}")
+            print(f"Mode: {args.mode}, Policy: {args.policy}, Env: {args.env}, Data: {args.data_set}, Domain Adaptation: {args.domain_adaptation}, ri: {args.intrinsic_reward}, Seed: {args.seed}")
             print("---------------------------------------")
         else:
-            file_name = f"{args.mode}_{args.policy}_Entropy_{args.Entropy}_{args.env}_dataset_{args.data_set}_{args.seed}"
+            file_name = f"{args.mode}_{args.policy}_Entropy_{args.Entropy}_{args.env}_dataset_{args.data_set}_domain_adaptation_{args.domain_adaptation}_ri_{args.intrinsic_reward}_{args.seed}"
             print("---------------------------------------")
-            print(f"Mode: {args.mode}, Policy: {args.policy}_Entropy_{args.Entropy}, Env: {args.env}, Data: {args.data_set}, Seed: {args.seed}")
+            print(f"Mode: {args.mode}, Policy: {args.policy}_Entropy_{args.Entropy}, Env: {args.env}, Data: {args.data_set}, Domain Adaptation: {args.domain_adaptation}, ri: {args.intrinsic_reward}, Seed: {args.seed}")
             print("---------------------------------------")
         
         if not os.path.exists(f"./results/{args.mode}"):

@@ -736,7 +736,7 @@ class run_on_off_SAC:
             if t >= args.start_timesteps:
                 
                 if args.mode == "on_off_RL_from_observations":
-                    self.agent.train_inverse_models(replay_buffer_offline)
+                    self.agent.train_inverse_models(replay_buffer_online)
                 
                 self.agent.train(replay_buffer_online, replay_buffer_offline)
 
@@ -800,7 +800,7 @@ class run_on_off_AWAC:
             if t >= args.start_timesteps:
                 
                 if args.mode == "on_off_RL_from_observations":
-                    self.agent.train_inverse_models(replay_buffer_offline)
+                    self.agent.train_inverse_models(replay_buffer_online)
                 
                 self.agent.train(replay_buffer_online, replay_buffer_offline)
 
@@ -838,7 +838,7 @@ class run_on_off_AWAC_Q_lambda_Peng:
             self.agent.Q_lambda_Peng(env, args)
             
             if args.mode == "on_off_RL_from_observations":
-                self.agent.train_inverse_models(replay_buffer)
+                self.agent.train_inverse_models()
             
             states, actions, target_Q, advantage = self.agent.Q_lambda_Peng_off(replay_buffer, args.ntrajs)
             self.agent.train(states, actions, target_Q, advantage)
@@ -868,7 +868,7 @@ class run_on_off_AWAC_Q_lambda_Haru:
             self.agent.Q_lambda_Haru(env, args)
             
             if args.mode == "on_off_RL_from_observations":
-                self.agent.train_inverse_models(replay_buffer)
+                self.agent.train_inverse_models()
             
             states, actions, target_Q, advantage = self.agent.Q_lambda_Haru_off(replay_buffer, args.ntrajs)
             self.agent.train(states, actions, target_Q, advantage)
@@ -898,7 +898,7 @@ class run_on_off_AWAC_TB:
             self.agent.TB_lambda(env, args)
             
             if args.mode == "on_off_RL_from_observations":
-                self.agent.train_inverse_models(replay_buffer)
+                self.agent.train_inverse_models()
             
             states, actions, target_Q, advantage = self.agent.TB_lambda_off(replay_buffer, args.ntrajs)
             self.agent.train(states, actions, target_Q, advantage)
@@ -928,7 +928,7 @@ class run_on_off_AWAC_GAE:
             self.agent.GAE(env, args)
             
             if args.mode == "on_off_RL_from_observations":
-                self.agent.train_inverse_models(replay_buffer)
+                self.agent.train_inverse_models()
             
             states, actions, returns, advantage = self.agent.GAE_off(replay_buffer, args.ntrajs)
             self.agent.train(states, actions, returns, advantage)

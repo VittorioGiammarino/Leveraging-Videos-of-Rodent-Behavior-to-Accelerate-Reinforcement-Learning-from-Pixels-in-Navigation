@@ -15,6 +15,8 @@ from gym_minigrid.window import Window
 import pickle
 import os
 
+import matplotlib.pyplot as plt
+
 # %%
 
 Buffer = {}
@@ -96,3 +98,51 @@ if not os.path.exists("./offline_data_set"):
 a_file = open(f"./offline_data_set/data_set_{args.env}_random.pkl", "wb")
 pickle.dump(Buffer, a_file)
 a_file.close()
+
+# %%
+
+env = 'MiniGrid-Empty-16x16-v0'
+data_set = 'random'
+a_file = open(f"offline_data_set/data_set_{env}_{data_set}.pkl", "rb")
+data_set_expert = pickle.load(a_file)
+
+# %%
+sample = data_set_expert['observations'][0]
+sample_changed = np.array([sample[:,:,1],sample[:,:,2],sample[:,:,0]]).transpose(1,2,0)
+dim = sample_changed.shape
+
+
+modified_set_expert = {}
+modified_set_expert['observations'] = []
+
+for data in range(len(data_set_expert['observations'])):
+    sample = data_set_expert['observations'][data]
+    dim = sample.shape
+    sample_changed = np.array([sample[:,:,1],sample[:,:,2],sample[:,:,0]]).transpose(1,2,0)
+    for i in range(dim[0]):
+        for j in range(dim[1]):
+                if sample_changed[i,j,0] == 0 and sample_changed[i,j,1] == 0 and sample_changed[i,j,2] == 0:
+                    sample_changed[i,j,0] = 255
+                    sample_changed[i,j,1] = 255
+                    sample_changed[i,j,2] = 255
+                    
+    modified_set_expert['observations'].append(sample_changed)
+ 
+# %%
+
+modified_set_expert['observations'] = np.array(modified_set_expert['observations'])
+               
+if not os.path.exists("./offline_data_set"):
+    os.makedirs("./offline_data_set")
+
+a_file = open(f"./offline_data_set/data_set_modified_{env}_{data_set}.pkl", "wb")
+pickle.dump(modified_set_expert, a_file)
+a_file.close()
+
+# %%
+
+a_file = open(f"offline_data_set/data_set_modified_{env}_{data_set}.pkl", "rb")
+data_set_expert_mod = pickle.load(a_file)
+
+plt.imshow(data_set_expert_mod['observations'][100])
+
