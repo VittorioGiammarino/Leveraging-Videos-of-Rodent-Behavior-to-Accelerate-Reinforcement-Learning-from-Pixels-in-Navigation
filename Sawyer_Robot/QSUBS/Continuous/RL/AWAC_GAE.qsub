@@ -1,0 +1,19 @@
+#!/bin/bash -l
+
+#$ -l h_rt=172:00:00
+
+#$ -m e
+
+#$ -j y
+
+#$ -N RL_AWAC_GAE
+
+#$ -V
+
+#$ -pe omp 4
+#$ -l mem_per_core=4G
+
+module load miniconda
+
+conda activate /project/onr/vgiammar/RL_env
+python main.py --mode RL --env Image48HumanLikeSawyerPushForwardEnv-v1 --policy AWAC_GAE --max_iter 250 --seed $1
