@@ -25,7 +25,10 @@ def FlatStochasticSampleTrajMDP(seed, policy, args):
         if args.grid_observability == 'Partial':
             eval_env = RGBImgPartialObsWrapper(eval_env)
         elif args.grid_observability == 'Fully':
-            eval_env = RGBImgObsWrapper(eval_env)
+            if args.env == "MiniGrid-Empty-32x32-v0":
+                eval_env = RGBImgObsWrapper(eval_env, tile_size=4)
+            else:
+                eval_env = RGBImgObsWrapper(eval_env)
         else:
             print("Special encoding Environmnet")
                 

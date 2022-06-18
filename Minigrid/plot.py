@@ -57,7 +57,7 @@ colors['HSAC_3'] = 'peru'
 # RL_algorithms = ['AWAC', 'AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 
 #                   'GeA2C', 'GePPO', 'PPO', 'SAC', 'TD3']
 
-RL_algorithms = ['GePPO', 'PPO', 'SAC', 'TD3']
+RL_algorithms = ['PPO', 'SAC', 'TD3']
 
 colors = {}
 
@@ -78,23 +78,23 @@ environments = ['MiniGrid-Empty-16x16-v0']
 
 for env in environments:
     
-    columns = 2
+    columns = 1
     rows = 1
     
-    fig, ax = plt.subplots(rows, columns, figsize=(12,4))
+    fig, ax = plt.subplots(rows, columns, figsize=(6,4))
     plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
     # fig.suptitle(env, fontsize="xx-large")
     
     for k, ax_row in enumerate([ax]):
-        for j, axes in enumerate(ax_row):
+        for j, axes in enumerate([ax_row]):
     
             for i in range(len(RL_algorithms)):
     
                 
                 if j == 0:
-                    Top_three = False
-                else:
                     Top_three = True
+                else:
+                    Top_three = False
             
                 policy = RL_algorithms[i]
                 
@@ -136,6 +136,7 @@ for env in environments:
                     axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
                     
                     axes.set_ylim([0, 1.05])
+                    axes.set_xlim([0, 200000])
                     axes.set_xlabel('Frames')
                     axes.set_ylabel('Reward')
                 except:
@@ -146,6 +147,7 @@ for env in environments:
    
     handles, labels = axes.get_legend_handles_labels()
     fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=4, prop={'size': 12})
+    plt.title(f'{env} Online RL')
            
     plt.savefig(f'Figures/{env}/{env}_Online_RL.pdf', format='pdf', bbox_inches='tight')
 
@@ -170,23 +172,33 @@ environments = ['MiniGrid-Empty-16x16-v0']
 
 for env in environments:
     
-    columns = 2
+    columns = 1
     rows = 1
     
-    fig, ax = plt.subplots(rows, columns, figsize=(12,4))
+    fig, ax = plt.subplots(rows, columns, figsize=(6,4))
     plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
     
     for k, ax_row in enumerate([ax]):
-        for j, axes in enumerate(ax_row):
+        for j, axes in enumerate([ax_row]):
     
             for i in range(len(RL_algorithms)):
                 
                 if j == 0:
-                    Top_three = False
-                else:
                     Top_three = True
+                else:
+                    Top_three = False
             
                 policy = RL_algorithms[i]
+                
+                if policy == 'AWAC_GAE':
+                    policy_label = 'AWPO+GAE'
+                elif policy == 'AWAC_Q_lambda_Haru':
+                    policy_label = 'AWPO+HQL'
+                elif policy == 'AWAC_Q_lambda_Peng':
+                    policy_label = 'AWPO+PQL'
+                elif policy == 'AWAC_Q_lambda_TB':
+                    policy_label = 'AWPO+TBL'
+                    
                 
                 RL = []
                 
@@ -222,10 +234,11 @@ for env in environments:
                     mean = np.mean(np.array(RL), 0)
                     steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
                     std = np.std(np.array(RL),0)
-                    axes.plot(steps, mean, label=policy, c=colors[policy])
+                    axes.plot(steps, mean, label=policy_label, c=colors[policy])
                     axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
                     
                     axes.set_ylim([0, 1.05])
+                    axes.set_xlim([0, 200000])
                     axes.set_xlabel('Frames')
                     axes.set_ylabel('Reward')
                 except:
@@ -235,29 +248,42 @@ for env in environments:
         os.makedirs(f"./Figures/{env}")
               
     handles, labels = axes.get_legend_handles_labels()
-    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3, prop={'size': 12})
-           
+    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=2, prop={'size': 12})
+    
+    plt.title(f'{env} online AWPO w/o Entropy')       
     plt.savefig(f'Figures/{env}/{env}_AWR.pdf', format='pdf', bbox_inches='tight')
+    
     
 for env in environments:
     
-    columns = 2
+    columns = 1
     rows = 1
     
-    fig, ax = plt.subplots(rows, columns, figsize=(12,4))
+    fig, ax = plt.subplots(rows, columns, figsize=(6,4))
     plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
     
     for k, ax_row in enumerate([ax]):
-        for j, axes in enumerate(ax_row):
+        for j, axes in enumerate([ax_row]):
     
             for i in range(len(RL_algorithms)):
                 
                 if j == 0:
-                    Top_three = False
-                else:
                     Top_three = True
+                else:
+                    Top_three = False
             
                 policy = RL_algorithms[i]
+                
+                if policy == 'AWAC_GAE':
+                    policy_label = 'AWPO+GAE'
+                elif policy == 'AWAC_Q_lambda_Haru':
+                    policy_label = 'AWPO+HQL'
+                elif policy == 'AWAC_Q_lambda_Peng':
+                    policy_label = 'AWPO+PQL'
+                elif policy == 'AWAC_Q_lambda_TB':
+                    policy_label = 'AWPO+TBL'
+                elif policy == 'AWAC':
+                    policy_label = 'AWAC'
                 
                 RL = []
                 
@@ -293,10 +319,11 @@ for env in environments:
                     mean = np.mean(np.array(RL), 0)
                     steps = np.linspace(0, (len(mean)-1)*4096, len(mean))
                     std = np.std(np.array(RL),0)
-                    axes.plot(steps, mean, label=policy, c=colors[policy])
+                    axes.plot(steps, mean, label=policy_label, c=colors[policy])
                     axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
                     
                     axes.set_ylim([0, 1.05])
+                    axes.set_xlim([0, 200000])
                     axes.set_xlabel('Frames')
                     axes.set_ylabel('Reward')
                 except:
@@ -307,7 +334,8 @@ for env in environments:
               
     handles, labels = axes.get_legend_handles_labels()
     fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3, prop={'size': 12})
-           
+ 
+    plt.title(f'{env} online AWPO w/ Entropy')              
     plt.savefig(f'Figures/{env}/{env}_AWR_Entropy_True.pdf', format='pdf', bbox_inches='tight')
 
 
@@ -421,7 +449,7 @@ for env in environments:
 
 # %% On_off RL from expert demonstrations
 
-RL_algorithms = ['AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 'PPO']
+RL_algorithms = ['AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 'PPO', 'SAC', 'AWAC']
 
 colors = {}
 
@@ -433,34 +461,48 @@ colors['AWAC_Q_lambda_Haru'] = 'lime'
 colors['AWAC_Q_lambda_Peng'] = 'tab:purple'
 colors['AWAC_Q_lambda_TB'] = 'tab:brown'
 colors['PPO'] = 'chocolate'
+colors['SAC'] = 'tab:olive'
+colors['AWAC'] = 'tab:blue'
 
 environments = ['MiniGrid-Empty-16x16-v0']
 
 for env in environments:
     for data in data_set:
     
-        columns = 2
+        columns = 1
         rows = 1
         
-        fig, ax = plt.subplots(rows, columns, figsize=(12,4))
+        fig, ax = plt.subplots(rows, columns, figsize=(6,4))
         plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
         
         for k, ax_row in enumerate([ax]):
-            for j, axes in enumerate(ax_row):
+            for j, axes in enumerate([ax_row]):
         
                 for i in range(len(RL_algorithms)):
                     
                     if j == 0:
-                        Top_three = False
-                    else:
                         Top_three = True
+                    else:
+                        Top_three = False
                 
                     policy = RL_algorithms[i]
                     
-                    if policy != 'PPO':
-                        policy_label = f'on_off_{policy}'
-                    else:
+                        
+                    if policy == 'AWAC_GAE':
+                        policy_label = 'AWPO+GAE'
+                    elif policy == 'AWAC_Q_lambda_Haru':
+                        policy_label = 'AWPO+HQL'
+                    elif policy == 'AWAC_Q_lambda_Peng':
+                        policy_label = 'AWPO+PQL'
+                    elif policy == 'AWAC_Q_lambda_TB':
+                        policy_label = 'AWPO+TBL'
+                    elif policy == 'AWAC':
+                        policy_label = 'AWAC'
+                    elif policy == 'SAC':
                         policy_label = policy
+                    elif policy == 'PPO':
+                        policy_label = policy
+                        
                         
                     a_file = open(f"offline_data_set/data_set_{env}_{data}.pkl", "rb")
                     offline_set = pickle.load(a_file)   
@@ -475,8 +517,14 @@ for env in environments:
                                 with open(f'results_partial/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
                                     RL.append(np.load(f, allow_pickle=True))  
                             else:
-                                with open(f'results_partial/on_off_RL_from_demonstrations/evaluation_on_off_RL_from_demonstrations_{policy}_Entropy_False_{env}_dataset_{data}_{seed}.npy', 'rb') as f:
-                                    RL.append(np.load(f, allow_pickle=True))    
+                                
+                                if policy == "SAC":
+                                    with open(f'results_partial/on_off_RL_from_demonstrations/evaluation_on_off_RL_from_demonstrations_{policy}_{env}_dataset_{data}_{seed}.npy', 'rb') as f:
+                                        RL.append(np.load(f, allow_pickle=True))  
+                                    
+                                else:
+                                    with open(f'results_partial/on_off_RL_from_demonstrations/evaluation_on_off_RL_from_demonstrations_{policy}_Entropy_False_{env}_dataset_{data}_{seed}.npy', 'rb') as f:
+                                        RL.append(np.load(f, allow_pickle=True))    
                                     
                         except:
                             continue
@@ -501,12 +549,13 @@ for env in environments:
                             RL = RL_temp
                         
                         mean = np.mean(np.array(RL), 0)
-                        steps = np.linspace(0, 100, len(mean))
+                        steps = np.linspace(0, 4096*100, len(mean))
                         std = np.std(np.array(RL),0)
                         axes.plot(steps, mean, label=policy_label, c=colors[policy])
                         axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
                         
                         axes.set_ylim([0, 1.05])
+                        axes.set_xlim([0, 200000])
                         axes.set_xlabel('Frames')
                         axes.set_ylabel('Reward')
                         
@@ -522,7 +571,8 @@ for env in environments:
                   
         handles, labels = axes.get_legend_handles_labels()
         fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3, prop={'size': 12})
-               
+
+        plt.title(f'{env} AWPO w/ Offline Demonstrations vs PPO')                  
         plt.savefig(f'Figures/{env}/on_off_RL_from_demonstrations_{env}_dataset_{data}.pdf', format='pdf', bbox_inches='tight')
 
 # %% On_off RL from expert demonstrations
@@ -545,14 +595,14 @@ environments = ['MiniGrid-Empty-16x16-v0']
 for env in environments:
     for data in data_set:
     
-        columns = 2
+        columns = 1
         rows = 1
         
-        fig, ax = plt.subplots(rows, columns, figsize=(12,4))
+        fig, ax = plt.subplots(rows, columns, figsize=(6,4))
         plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
         
         for k, ax_row in enumerate([ax]):
-            for j, axes in enumerate(ax_row):
+            for j, axes in enumerate([ax_row]):
         
                 for i in range(len(RL_algorithms)):
                     
@@ -563,9 +613,19 @@ for env in environments:
                 
                     policy = RL_algorithms[i]
                     
-                    if policy != 'PPO':
-                        policy_label = f'on_off_{policy}'
-                    else:
+                    if policy == 'AWAC_GAE':
+                        policy_label = 'AWPO+GAE'
+                    elif policy == 'AWAC_Q_lambda_Haru':
+                        policy_label = 'AWPO+HQL'
+                    elif policy == 'AWAC_Q_lambda_Peng':
+                        policy_label = 'AWPO+PQL'
+                    elif policy == 'AWAC_Q_lambda_TB':
+                        policy_label = 'AWPO+TBL'
+                    elif policy == 'AWAC':
+                        policy_label = 'AWAC'
+                    elif policy == 'SAC':
+                        policy_label = policy
+                    elif policy == 'PPO':
                         policy_label = policy
                         
                     a_file = open(f"offline_data_set/data_set_{env}_{data}.pkl", "rb")
@@ -607,12 +667,13 @@ for env in environments:
                             RL = RL_temp
                         
                         mean = np.mean(np.array(RL), 0)
-                        steps = np.linspace(0, 100, len(mean))
+                        steps = np.linspace(0, 4096*100, len(mean))
                         std = np.std(np.array(RL),0)
                         axes.plot(steps, mean, label=policy_label, c=colors[policy])
                         axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
                         
                         axes.set_ylim([0, 1.05])
+                        axes.set_xlim([0, 200000])
                         axes.set_xlabel('Frames')
                         axes.set_ylabel('Reward')
                         
@@ -628,17 +689,18 @@ for env in environments:
                   
         handles, labels = axes.get_legend_handles_labels()
         fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3, prop={'size': 12})
+        plt.title(f'{env} AWPO+GAE w/ Offline Demonstrations vs PPO')  
                
         plt.savefig(f'Figures/{env}/on_off_RL_from_demonstrations_{env}_dataset_{data}_PPO.pdf', format='pdf', bbox_inches='tight')
 
 # %% On_off RL from human expert observations
 
-RL_algorithms = ['AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 'PPO']
+RL_algorithms = ['AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 'PPO', 'SAC', 'AWAC']
 
 colors = {}
 
 data_set = ['modified_human_expert', 'rodent']
-domain_adaptation = ['True', 'False']
+domain_adaptation = ['True']
 environments = ['MiniGrid-Empty-16x16-v0']
 intrinsic_reward = ['0.01', '0.005']
 
@@ -647,33 +709,45 @@ colors['AWAC_Q_lambda_Haru'] = 'lime'
 colors['AWAC_Q_lambda_Peng'] = 'tab:purple'
 colors['AWAC_Q_lambda_TB'] = 'tab:brown'
 colors['PPO'] = 'chocolate'
+colors['SAC'] = 'tab:olive'
+colors['AWAC'] = 'tab:blue'
 
 
 for env in environments:
     for domain_adapt in domain_adaptation:
         data = data_set[0]
 
-        columns = 2
+        columns = 1
         rows = 1
         
-        fig, ax = plt.subplots(rows, columns, figsize=(12,4))
+        fig, ax = plt.subplots(rows, columns, figsize=(6,4))
         plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
         
         for k, ax_row in enumerate([ax]):
-            for j, axes in enumerate(ax_row):
+            for j, axes in enumerate([ax_row]):
         
                 for i in range(len(RL_algorithms)):
                     
                     if j == 0:
-                        Top_three = False
-                    else:
                         Top_three = True
+                    else:
+                        Top_three = False
                 
                     policy = RL_algorithms[i]
                     
-                    if policy != 'PPO':
-                        policy_label = f'on-off {policy}, DA {domain_adapt}'
-                    else:
+                    if policy == 'AWAC_GAE':
+                        policy_label = 'AWPO+GAE'
+                    elif policy == 'AWAC_Q_lambda_Haru':
+                        policy_label = 'AWPO+HQL'
+                    elif policy == 'AWAC_Q_lambda_Peng':
+                        policy_label = 'AWPO+PQL'
+                    elif policy == 'AWAC_Q_lambda_TB':
+                        policy_label = 'AWPO+TBL'
+                    elif policy == 'AWAC':
+                        policy_label = 'AWAC'
+                    elif policy == 'SAC':
+                        policy_label = policy
+                    elif policy == 'PPO':
                         policy_label = policy
                         
                     a_file = open(f"offline_data_set/data_set_{env}_human_expert.pkl", "rb")
@@ -689,8 +763,12 @@ for env in environments:
                                 with open(f'results_partial/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
                                     RL.append(np.load(f, allow_pickle=True))  
                             else:
-                                with open(f'results_partial/on_off_RL_from_observations/evaluation_on_off_RL_from_observations_{policy}_Entropy_False_{env}_dataset_{data}_domain_adaptation_{domain_adapt}_ri_0.01_{seed}.npy', 'rb') as f:
-                                    RL.append(np.load(f, allow_pickle=True))    
+                                if policy == "SAC":
+                                    with open(f'results_partial/on_off_RL_from_observations/evaluation_on_off_RL_from_observations_{policy}_{env}_dataset_{data}_domain_adaptation_{domain_adapt}_ri_0.01_{seed}.npy', 'rb') as f:
+                                        RL.append(np.load(f, allow_pickle=True))     
+                                else:
+                                    with open(f'results_partial/on_off_RL_from_observations/evaluation_on_off_RL_from_observations_{policy}_Entropy_False_{env}_dataset_{data}_domain_adaptation_{domain_adapt}_ri_0.01_{seed}.npy', 'rb') as f:
+                                        RL.append(np.load(f, allow_pickle=True))    
                                     
                         except:
                             continue
@@ -715,12 +793,13 @@ for env in environments:
                             RL = RL_temp
                         
                         mean = np.mean(np.array(RL), 0)
-                        steps = np.linspace(0, 100, len(mean))
+                        steps = np.linspace(0, 100*4096, len(mean))
                         std = np.std(np.array(RL),0)
                         axes.plot(steps, mean, label=policy_label, c=colors[policy])
                         axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
                         
                         axes.set_ylim([0, 1.05])
+                        axes.set_xlim([0, 200000])
                         axes.set_xlabel('Frames')
                         axes.set_ylabel('Reward')
                         
@@ -736,12 +815,13 @@ for env in environments:
                   
         handles, labels = axes.get_legend_handles_labels()
         fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3, prop={'size': 12})
+        plt.title(f'{env} AWPO w/ Offline Observations + WADA vs PPO')  
                
         plt.savefig(f'Figures/{env}/on_off_RL_from_observations_{env}_dataset_{data}_domain_adaptation_{domain_adapt}.pdf', format='pdf', bbox_inches='tight')
         
 # %% On_off RL from rodent observations
 
-RL_algorithms = ['AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 'PPO']
+RL_algorithms = ['AWAC_GAE', 'AWAC_Q_lambda_Haru', 'AWAC_Q_lambda_Peng', 'AWAC_Q_lambda_TB', 'PPO', 'SAC', 'AWAC']
 
 colors = {}
 
@@ -755,6 +835,8 @@ colors['AWAC_Q_lambda_Haru'] = 'lime'
 colors['AWAC_Q_lambda_Peng'] = 'tab:purple'
 colors['AWAC_Q_lambda_TB'] = 'tab:brown'
 colors['PPO'] = 'chocolate'
+colors['SAC'] = 'tab:olive'
+colors['AWAC'] = 'tab:blue'
 
 
 for env in environments:
@@ -762,27 +844,37 @@ for env in environments:
         data = data_set[1]
         domain_adapt = domain_adaptation[0]
 
-        columns = 2
+        columns = 1
         rows = 1
         
-        fig, ax = plt.subplots(rows, columns, figsize=(12,4))
+        fig, ax = plt.subplots(rows, columns, figsize=(6,4))
         plt.subplots_adjust(top = 0.99, bottom=0.01, hspace=0.4, wspace=0.2)
         
         for k, ax_row in enumerate([ax]):
-            for j, axes in enumerate(ax_row):
+            for j, axes in enumerate([ax_row]):
         
                 for i in range(len(RL_algorithms)):
                     
                     if j == 0:
-                        Top_three = False
-                    else:
                         Top_three = True
+                    else:
+                        Top_three = False
                 
                     policy = RL_algorithms[i]
                     
-                    if policy != 'PPO':
-                        policy_label = f'on-off {policy}, intrinsic reward {ri}'
-                    else:
+                    if policy == 'AWAC_GAE':
+                        policy_label = 'AWPO+GAE'
+                    elif policy == 'AWAC_Q_lambda_Haru':
+                        policy_label = 'AWPO+HQL'
+                    elif policy == 'AWAC_Q_lambda_Peng':
+                        policy_label = 'AWPO+PQL'
+                    elif policy == 'AWAC_Q_lambda_TB':
+                        policy_label = 'AWPO+TBL'
+                    elif policy == 'AWAC':
+                        policy_label = 'AWAC'
+                    elif policy == 'SAC':
+                        policy_label = policy
+                    elif policy == 'PPO':
                         policy_label = policy
                                             
                     RL = []
@@ -793,8 +885,12 @@ for env in environments:
                                 with open(f'results_partial/RL/evaluation_RL_{policy}_Entropy_True_{env}_{seed}.npy', 'rb') as f:
                                     RL.append(np.load(f, allow_pickle=True))  
                             else:
-                                with open(f'results_partial/on_off_RL_from_observations/evaluation_on_off_RL_from_observations_{policy}_Entropy_False_{env}_dataset_{data}_domain_adaptation_{domain_adapt}_ri_{ri}_{seed}.npy', 'rb') as f:
-                                    RL.append(np.load(f, allow_pickle=True))    
+                                if policy == "SAC":
+                                    with open(f'results_partial/on_off_RL_from_observations/evaluation_on_off_RL_from_observations_{policy}_{env}_dataset_{data}_domain_adaptation_{domain_adapt}_ri_{ri}_{seed}.npy', 'rb') as f:
+                                        RL.append(np.load(f, allow_pickle=True))     
+                                else:
+                                    with open(f'results_partial/on_off_RL_from_observations/evaluation_on_off_RL_from_observations_{policy}_Entropy_False_{env}_dataset_{data}_domain_adaptation_{domain_adapt}_ri_{ri}_{seed}.npy', 'rb') as f:
+                                        RL.append(np.load(f, allow_pickle=True))    
                                     
                         except:
                             continue
@@ -819,12 +915,13 @@ for env in environments:
                             RL = RL_temp
                         
                         mean = np.mean(np.array(RL), 0)
-                        steps = np.linspace(0, 100, len(mean))
+                        steps = np.linspace(0, 100*4096, len(mean))
                         std = np.std(np.array(RL),0)
                         axes.plot(steps, mean, label=policy_label, c=colors[policy])
                         axes.fill_between(steps, mean-std, mean+std, alpha=0.2, facecolor=colors[policy])
                         
                         axes.set_ylim([0, 1.05])
+                        axes.set_xlim([0, 200000])
                         axes.set_xlabel('Frames')
                         axes.set_ylabel('Reward')
                         
@@ -838,6 +935,7 @@ for env in environments:
                   
         handles, labels = axes.get_legend_handles_labels()
         fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=3, prop={'size': 12})
+        plt.title(f'{env}+Rodent, AWPO w/ Off-Obs, ri = {ri} + WADA vs PPO')  
                
         plt.savefig(f'Figures/{env}/on_off_RL_from_observations_{env}_dataset_{data}_intrinsic_reward_{ri}.pdf', format='pdf', bbox_inches='tight')
 

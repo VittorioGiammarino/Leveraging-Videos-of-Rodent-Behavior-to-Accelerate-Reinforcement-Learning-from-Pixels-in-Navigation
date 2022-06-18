@@ -343,7 +343,8 @@ def RL(env, args, seed):
                 off_policy_observations = np.load(f, allow_pickle=True)
                 
         elif args.data_set == 'modified_human_expert':
-            assert args.env == "MiniGrid-Empty-16x16-v0"
+            assert args.env == "MiniGrid-Empty-16x16-v0" or args.env == "MiniGrid-FourRooms-v0"
+            
             a_file = open(f"offline_data_set/data_set_modified_{args.env}_human_expert.pkl", "rb")
             data_set = pickle.load(a_file)
             off_policy_observations = data_set['observations'].transpose(0,3,1,2)
@@ -645,7 +646,11 @@ def train(args, seed):
     if args.grid_observability == 'Partial':
         env = RGBImgPartialObsWrapper(env)
     elif args.grid_observability == 'Fully':
-        env = RGBImgObsWrapper(env)
+        
+        if args.env == "MiniGrid-Empty-32x32-v0":
+            env = RGBImgObsWrapper(env, tile_size=4)
+        else:
+            env = RGBImgObsWrapper(env)
     else:
         print("Special encoding Environmnet")
         
@@ -679,40 +684,40 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     #General
     parser.add_argument("--mode", default="on_off_RL_from_observations", help='RL, offline_RL, on_off_RL_from_demonstrations, on_off_RL_from_observations')     
-    parser.add_argument("--env", default="MiniGrid-Empty-16x16-v0", help = 'MiniGrid-Empty-16x16-v0')  
+    parser.add_argument("--env", default="MiniGrid-Empty-32x32-v0", help = 'MiniGrid-Empty-16x16-v0 or MiniGrid-Empty-32x32-v0')  
     parser.add_argument("--data_set", default="rodent", help="random, human_expert, rodent, modified_human_expert")  
     parser.add_argument("--action_space", default="Discrete")  # Discrete or continuous
     parser.add_argument("--grid_observability", default="Fully", help="Partial or Fully observable")
     parser.add_argument("--exploration_bonus", action = "store_true", help="reward to encourage exploration of less visited (state,action) pairs")
     
-    parser.add_argument("--policy", default="AWAC_Q_lambda_Peng") 
+    parser.add_argument("--policy", default="AWAC_GAE") 
     parser.add_argument("--seed", default=10, type=int)               # Sets Gym, PyTorch and Numpy seeds
-    parser.add_argument("--number_steps_per_iter", default=4096, type=int) # Number of steps between two evaluations (default Minigrid: 4096)
+    parser.add_argument("--number_steps_per_iter", default=4*32*32*4, type=int) # Number of steps between two evaluations (default Minigrid: 4096)
     parser.add_argument("--eval_freq", default=1, type=int)          # How many iterations we evaluate
-    parser.add_argument("--max_iter", default=100, type=int)    # Max number of iterations to run environment, max_steps = max_iter*number_steps_per_iter
+    parser.add_argument("--max_iter", default=50, type=int)    # Max number of iterations to run environment, max_steps = max_iter*number_steps_per_iter
     # RL
     parser.add_argument("--start_timesteps", default=5e3, type=int) # Time steps before training default=5e3 (default Minigrid: 5000, default Sawyer: 25000)
     parser.add_argument("--expl_noise", default=0.1)                 # Std of Gaussian exploration noise    
     # offline RL
-    parser.add_argument("--ntrajs", default=10, type=int) #default: 10, number of off-policy trajectories 
+    parser.add_argument("--ntrajs", default=5, type=int) #default: 10, number of off-policy trajectories 
     parser.add_argument("--number_obs_per_traj", default=100, type=int) # number of off-policy demonstrations or observations used for training at each iteration (default Minigrid: 100, default Sawyer: 500)
     parser.add_argument("--Entropy", action="store_true")
     parser.add_argument("--BC", action="store_true")
     # from observations
     parser.add_argument("--domain_adaptation", action="store_true")
-    parser.add_argument("--intrinsic_reward", default=0.005, type=float) #0.01 or 0.005 or 0
+    parser.add_argument("--intrinsic_reward", default=0.01, type=float) #0.01 or 0.005 or 0
     # Evaluation
     parser.add_argument("--evaluation_episodes", default=10, type=int) #default: 10, number of episodes per evaluation
-    parser.add_argument("--evaluation_max_n_steps", default = 2000, type=int) #default: 2000, max number of steps evaluation episode
+    parser.add_argument("--evaluation_max_n_steps", default = 4*32*32, type=int) #default: 2000, max number of steps evaluation episode
     # Experiments
     parser.add_argument("--detect_gradient_anomaly", action="store_true")
     args = parser.parse_args()
     
     torch.autograd.set_detect_anomaly(args.detect_gradient_anomaly)
     
-    assert args.env == "MiniGrid-Empty-16x16-v0"
+    assert args.env == "MiniGrid-Empty-16x16-v0" or args.env == "MiniGrid-Empty-32x32-v0" or args.env == "MiniGrid-FourRooms-v0"
         
-    if args.env == "MiniGrid-Empty-16x16-v0":
+    if args.env == "MiniGrid-Empty-16x16-v0" or args.env == "MiniGrid-Empty-32x32-v0":
         args.reward_given = False
         
     if args.mode == "RL":

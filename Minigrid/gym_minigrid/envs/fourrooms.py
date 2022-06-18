@@ -11,10 +11,10 @@ class FourRoomsEnv(MiniGridEnv):
     Can specify agent and goal position, if not it set at random.
     """
 
-    def __init__(self, agent_pos=None, goal_pos=None):
+    def __init__(self, agent_pos=(1,1), goal_pos=(17,17)):
         self._agent_default_pos = agent_pos
         self._goal_default_pos = goal_pos
-        super().__init__(grid_size=19, max_steps=100)
+        super().__init__(grid_size=19, max_steps=1000)
 
     def _gen_grid(self, width, height):
         # Create the grid
@@ -42,20 +42,20 @@ class FourRoomsEnv(MiniGridEnv):
                 # Bottom wall and door
                 if i + 1 < 2:
                     self.grid.vert_wall(xR, yT, room_h)
-                    pos = (xR, self._rand_int(yT + 1, yB))
+                    pos = (xR, yT+5)
                     self.grid.set(*pos, None)
 
                 # Bottom wall and door
                 if j + 1 < 2:
                     self.grid.horz_wall(xL, yB, room_w)
-                    pos = (self._rand_int(xL + 1, xR), yB)
+                    pos = (xL+4, yB)
                     self.grid.set(*pos, None)
 
         # Randomize the player start position and orientation
         if self._agent_default_pos is not None:
             self.agent_pos = self._agent_default_pos
             self.grid.set(*self._agent_default_pos, None)
-            self.agent_dir = self._rand_int(0, 4)  # assuming random start direction
+            self.agent_dir = 1  # assuming random start direction
         else:
             self.place_agent()
 
